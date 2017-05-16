@@ -1,5 +1,0 @@
-# On récupère les haplotypes EPO ici:
-/gs7k1/projects/g2pop/HOLTZ_YAN_DATA/EPO/2_PUBLI_GBS_EPO/2_MAPPING_SUR_BLE_TENDRE/3_MAPPING_AND_SNP/SNP
-
-# Avec:
-more SNP_all_on_ble_tendre.LDHEATMAP | grep "Traes_5AL_AE2EF1F20\|Contig" | head -100 | cut -f2- > tmp_qtl_5A

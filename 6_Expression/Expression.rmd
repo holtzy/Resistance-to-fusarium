@@ -1,0 +1,1247 @@
+---
+title: "Fusariose: use of expression data"
+author: "Yan Holtz"
+date: "October 2016"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+  html_document:
+    toc: yes
+    toc_depth: 3
+  pdf_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 3
+  word_document: default
+---
+
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#1/ Introduction
+This file is a supplementary data attached with the publication. It aims to describe the expression data of the Fusariose project
+Let's upload:
+- The file with the expression of each gene, for every individuals
+- The genotype matrix
+
+```{r}
+# Expression
+data <- read.delim("~/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/Expression.txt")
+rownames(data)=data[,1]
+data=data[,-1]
+colnames(data)=gsub("DC", "TT06DC." , colnames(data))
+rownames(data)=gsub("\\|T.*","",rownames(data) )
+
+# Genotype matrix
+geno = read.table(file="~/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/fichier_genotypage_QTL.csv", sep = ";" , header = F, na.strings = "-")
+geno= as.matrix(geno)
+colnames(geno)= geno[1,]
+geno= as.data.frame(geno[-1 , ])
+# Remove useless individuals
+geno <- geno [ geno[,1] %in% names(data),]
+
+# Position of genes
+POS=read.table("~/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/physical_map_of_BW.txt", header=T)
+POS$position=POS$position/1000000
+
+# Annotation
+ANOT=read.table("~/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/mart_export_Annotation.txt", sep="\t", header=T, na.strings="", quote = "", comment.char = "")
+# --> GO terms are available for 36355 genes only. And missing for all other genes (~35000).
+
+# Length of genes:
+LEN=read.table("~/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/Length_BWr_release28.txt", sep="\t", header=T)
+
+# Relationship between expression and phenotype (see below)
+REL=read.table("~/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/result_relation_gene_trait.txt", sep=" ", header=T)
+
+#Phenotype matrix:
+pheno=read.table("~/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/PHENOTYPE/phenotypage_all_fusa.csv" , header=T , sep=";" )
+pheno[,-1]=apply(pheno[,-1],2,as.numeric)
+rownames(pheno)=pheno$geno
+pheno=pheno[,-1]
+# delete columns with only NA
+which(apply( pheno , 2 , function(x) all(is.na(x)) )==TRUE)
+pheno=pheno[ , ! apply( pheno , 2 , function(x) all(is.na(x)) ) ]
+```
+
+
+Charge some libraries that will be useful
+```{r results='hide', message=FALSE, warning=FALSE}
+library(RColorBrewer)
+library(xtable)
+library(plotly)
+library(FactoMineR)
+library(DESeq2)
+library(goseq)
+library(GO.db)
+```
+
+Let's create a color vector for the study
+```{r}
+my_colors = brewer.pal(8, "Set2") 
+my_colors = colorRampPalette(my_colors)(15)
+```
+
+Let's create some objects denoting groups of phenotype:
+```{r}
+# reps
+REP1=REL[grep("rep1", REL$carac),]
+REP2=REL[grep("rep2", REL$carac),]
+BLUP=REL[grep("blup", REL$carac),]
+
+# experiments
+CAP13=REL[grep("CAP13", REL$carac),]
+GRI11=REL[grep("GRI11", REL$carac),]
+GRI13=REL[grep("GRI13", REL$carac),]
+GRI15=REL[grep("GRI15", REL$carac),]
+LEC14=REL[grep("LEC14", REL$carac),]
+BEQ11=REL[grep("BEQ11", REL$carac),]
+BAR14=REL[grep("BAR14", REL$carac),]
+
+# Type de phéno NEPI, NEPIL, PEPIL, NOT, DON
+PEPIL=REL[grep("PEPIL", REL$carac),]
+a=levels(REL$carac)[ grep("PEPIL", levels(REL$carac)) ]
+b=levels(REL$carac)[ grep("PEPI", levels(REL$carac)) ]
+PEPI=REL[REL$carac%in%setdiff(b, a) , ]
+NEPIL=REL[grep("NEPIL", REL$carac),]
+NOT=REL[grep("NOT", REL$carac),]
+DON=REL[grep("DON", REL$carac),]
+
+# AUDPC et derniere notation
+AUDPC=REL[grep("AUDPC", REL$carac),]
+
+# agronomical variable
+EPI=REL[grep("_EPI" , REL$carac),]
+FLO=REL[grep("FLO" , REL$carac),]
+HEI=REL[grep("HEI" , REL$carac),]
+
+# Interesting variable= derniere note + AUDPC, en blups quand dispo, sinon en note d'origine (BEQ11) --> Il en MANQUE
+my_vec=c("GRI11_NOT550_blup", "GRI11_NEPIL300_blup","GRI13_NOT550_blup","GRI13_NOTAUDPC_blup","GRI13_PEPIL550_blup","GRI13_PEPILAUDPC_blup","GRI15_NEPIL550_blup","GRI15_NOT550_blup","GRI15_NOTAUDPC_blup","GRI15_PEPIAUDPC_blup","GRI15_PEPIL550_blup","LEC14_NEPIL550_blup","LEC14_NEPILAUDPC_blup","LEC14_PEPI550_blup","LEC14_PEPIAUDPC_blup","LEC14_PEPIL550_blup","LEC14_PEPILAUDPC_blup","BEQ11_NEPIL500","BEQ11_NEPILAUDPC","BEQ11_NOT500","BEQ11_NOTAUDPC","BEQ11_PEPI450","BEQ11_PEPIAUDPC", "BAR14_NEPIL600_blup","BAR14_NEPILAUDPC_blup","BAR14_PEPI600_blup","BAR14_PEPIAUDPC_blup")
+INTEREST=REL[which(REL$carac%in%my_vec) , ]
+```
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+
+#2/ Usefull function
+
+```{r}
+# A function to represent a DE genes. It makes a boxplot with 2 categories: alleles A and B
+boxplot_DE_genes=function(marker, expr_gene, data){
+
+  # prepare data: merge expression and alleles:
+  nucl= geno[,c(1,which(colnames(geno)==marker)) ]
+  expr= t(data[which(rownames(data)==expr_gene) , ])
+  expr=data.frame(ind=rownames(expr), expr[,1] )
+  AA=merge(expr, nucl, by.x=1, by.y=1, all=T)
+
+  # Compute means
+  my_means=aggregate(AA[,2] , by=list(AA[,3]), mean, na.rm=T)
+  my_meanA=round(my_means[1,2] , 2)
+  my_meanB=round(my_means[2,2] , 2)
+  # T test
+  my_ttest=round(t.test(AA[,2]~AA[,3])$p.value , 2)
+
+  # Basic boxplot
+  boxplot(AA[,2]~AA[,3], 
+        col=my_colors[c(5,6)], 
+        ylab=paste("expression of ",gsub("\\|T.*","",expr_gene),sep=""), 
+        xlab=paste("allele of ",marker,sep="") , 
+        main=paste("A: ",my_meanA," | B: ",my_meanB," | pval: ",my_ttest, sep="" ) 
+        )
+
+  # Add data points
+  mylevels<-levels(AA[,3])
+  levelProportions<-summary(AA[,3])/nrow(AA)
+  for(i in 1:length(mylevels)){
+    thislevel<-mylevels[i]
+    thisvalues<-AA[AA[,3]==thislevel, 2]
+    # take the x-axis indices and add a jitter, proportional to the N in each level
+    myjitter<-jitter(rep(i, length(thisvalues)), amount=levelProportions[i]/2)
+    points(myjitter, thisvalues, pch=20, col=rgb(0,0,0,.2)) 
+  }
+}
+
+#Let's create a function that does the DE genes analysis for a given marker.
+get_DE_genes=function( marker ){
+
+  # TMP On ne prend que les n premières lignes de data
+  don=data
+  #don<-head(data,n=100)
+
+  # sum_expe contains the marker of interest
+  sum_expe=data.frame(
+    geno=c(as.character(geno[,1]),"dic2","silur"),
+    marker=c(as.character(geno[,which(colnames(geno)==marker) ]) , "A", "B")
+  )
+  sum_expe=na.omit(sum_expe)
+
+  # in data, I keep only individuals genotyped for the marker
+  don=don[ , which(colnames(don)%in%sum_expe[,1]) ]
+
+  # reorder sum_expe
+  sum_expe=sum_expe[match(colnames(don),sum_expe[,1] ), ] 
+  rownames(sum_expe)=sum_expe[,1]
+
+  # Call DeSeq2
+  dds <- DESeqDataSetFromMatrix(don, sum_expe, formula( ~ marker))
+  dds <- DESeq(dds)
+  res <- results(dds,contrast=c("marker","A","B") )
+  return(res)
+
+  # close function
+}
+
+# A function that compute the DEgenes related to a phenotypic trait
+get_DE_genes_from_pheno=function( trait ){
+
+  # TMP On ne prend que les n premières lignes de data
+  don=data
+  #don<-head(data,n=10000)
+
+  # sum_expe contains the trait of interest
+  sum_expe=data.frame(geno=rownames(pheno),trait=pheno[,trait] )
+  sum_expe=na.omit(sum_expe)
+
+  # in the expression matrix, I keep only individuals genotyped for the marker
+  don=don[ , which(colnames(don)%in%sum_expe[,1]) ]
+
+  # reorder sum_expe
+  sum_expe=sum_expe[match(colnames(don),sum_expe[,1] ), ] 
+  rownames(sum_expe)=sum_expe[,1]
+
+  # Call DeSeq2
+  dds <- DESeqDataSetFromMatrix(don, sum_expe, formula( ~ trait) )
+  dds <- DESeq(dds, test = c("Wald") )
+  res <- results(dds)
+  return(res)
+
+  # close function
+}
+
+# Function to plot the relationship between a trait and the expression of a gene.
+plot_cor_genes=function(trait, expr_gene ){
+
+  # prepare data: merge expression and alleles:
+  ze_pheno=data.frame(geno=rownames(pheno),trait=pheno[,trait] )
+  expr= t(data[which(rownames(data)==expr_gene) , ])
+  expr=data.frame(ind=rownames(expr), expression=expr[,1] )
+  AA=merge(expr, ze_pheno, by.x=1, by.y=1, all=T)
+  AA=na.omit(AA)
+
+  # Make the plot
+  plot(log(AA$expression) ~ AA$trait, pch=20, col=my_colors[4], cex=3, ylab=expr_gene, xlab=trait )  
+  abline(lm(log(AA$expression) ~ AA$trait) , col="grey", lwd=3)
+  }
+
+#A function that makes the barplot with a piece of REL dataframe. It shows the distribution of each chromosome.
+my_barplot=function(data, ...){
+  a=t(table(droplevels(data$carac),data$group))
+  b=barplot(a, col=my_colors, las=2, xaxt="n", ...)
+  axis(1,at=b, labels=colnames(a), las=2, tick=T, col="blue" , col.ticks=my_colors[as.numeric(as.factor(gsub("_.*","",colnames(a))))] )
+  }
+```
+
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#3/ Description of the expression file
+How many genes and individuals?
+```{r}
+n_gene=nrow(data)
+n_indiv=ncol(data)-1
+```
+We have `r n_gene` genes and `r n_indiv` individuals sequenced. (120 individuals in RNA-Seq - Dic2 - Silur =118)
+
+
+Let's have a look to the distribution of the number of reads per sample:
+```{r , fig.height=12 ,fig.width=8}
+# Calul du nbr de reads
+tot_reads_number=apply(data[,-1] , 2 , sum)
+names(tot_reads_number)=gsub("TT06DC.","",names(tot_reads_number))
+par(mar=c(5,5,2,2), mfrow=c(1,1))
+barplot( tot_reads_number , col=my_colors[5] , las=2, main="number of reads / sample", cex.names=0.8)
+```
+
+Distribution of the number of reads / gene for 4 random samples:
+```{r , fig.height=8 ,fig.width=8}
+set.seed(345)
+sub=data[ , sample(2:120 , 4)]
+par(mfrow=c(2,2)) ; for(i in 1:4){hist(sub[,i][sub[,i]<400] , breaks=100 , main=paste(colnames(sub)[i] , " | mean : ", round(mean(sub[,i]),2), " | max : "  , max(sub[,i]), sep="")  , xlab="nbr of reads" , col=rgb(0.2,0.5,0.8,0.7) )  }
+```
+As usual on a RNA-Seq experiment, we oberve a lot of genes with low expression (0-100 reads), and a few genes highly expressed (until 600 000 reads!)
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#4/ DE genes related to QTL 
+
+During the QTL analysis, we detected markers that are involved in the resistance to Fusarium. It would be interesting to check if we can discover genes that are differentially expressed between individuals with the resistant allele (A) and the sensitive allele (B).
+
+
+We have 2 main QTLs on chromosome 1B and 5A. We can apply this function 2 times, one for each QTL. For each QTL we take the marker the most representative of the zone.
+```{r, eval=F}
+# Threshold of detection:
+thres=0.05
+
+#Get the DE for the 1B QTL
+marker_1B="Traes_1BS_B9CBEFAE5@3469"
+DE_genes_QTL_1B=get_DE_genes(marker_1B)
+
+#Get the DE for the 5A QTL
+marker_5A="Traes_5AL_7102B2151@946"
+DE_genes_QTL_5A=get_DE_genes(marker_5A)
+
+# Save these 2 results in a R object
+save(DE_genes_QTL_1B , DE_genes_QTL_5A, file="/Users/holtz/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/DE_envir.R")
+```
+
+```{r}
+# Threshold of detection:
+thres=0.05
+marker_1B="Traes_1BS_B9CBEFAE5@3469"
+marker_5A="Traes_5AL_7102B2151@946"
+
+# DE genes
+load("/Users/holtz/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/DE_envir.R")
+```
+
+Let's have a look to the distribution of pval adjusted in the 2 cases.  
+We are supposed to have a "L" distribution if we want to get DE genes considering adjusted pvalue (False Discovery Rate).  
+We can see that it is the case for the 1B QTL,but not really for the 5A.
+So we will probably have only few DE genes for the 5B.
+```{r}
+par(mfrow=c(1,2))
+hist(DE_genes_QTL_1B$pvalue , main=paste("1B | min= ",round(min(DE_genes_QTL_1B$padj, na.rm=T),2),sep="") , col="grey" , xlab="Pval adj")
+hist(DE_genes_QTL_5A$pvalue , main=paste("5A | min= ",round(min(DE_genes_QTL_5A$padj, na.rm=T),2),sep="") , col="grey" , xlab="Pval adj")
+```
+
+Let's have a look to the most DE genes for the 1B QTL. Please remember that lof2foldchange NEGATIVE -> Dic2 express less than Silur!
+
+```{r}
+a=DE_genes_QTL_1B[ order(DE_genes_QTL_1B$padj) , ]
+head(a,5)
+a=DE_genes_QTL_5A[ order(DE_genes_QTL_5A$padj) , ]
+head(a,2)
+```
+
+The boxplot of the most DE genes related to the QTL 1B and 5A to check how big is the difference
+```{r}
+# use function
+par(mfrow=c(1,2))
+par(mar=c(5,4,3,3))
+boxplot_DE_genes(marker_1B, "Traes_2AL_89E21DB6D" , data)
+boxplot_DE_genes(marker_5A, "Traes_5AL_D8DC40ABF" , data)
+# huge difference. So the script looks all right!
+```
+
+Let's get the significant DE genes for the 2 QTLs. I merge this information with the physical positions and the annotation data provided by Ensembl Plant.
+```{r}
+#1B
+res_sig_1B=as.data.frame( DE_genes_QTL_1B[ which(DE_genes_QTL_1B$padj<thres) , ] )
+res_sig_1B=merge(res_sig_1B, POS, by.x="row.names", by.y=2, all.x=T)
+#5A
+res_sig_5A=data.frame( DE_genes_QTL_5A[ which(DE_genes_QTL_5A$padj<thres) , ] )
+res_sig_5A=merge(res_sig_5A, POS, by.x="row.names", by.y=2, all.x=T)
+```
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+##4.1/ DE-genes for 1B QTL
+
+How many DE genes do we have?
+```{r}
+# number of DEG
+nrow(res_sig_1B)
+
+# Overexpressed for Dic2 
+nrow(res_sig_1B[which(res_sig_1B$log2FoldChange>0) , ])
+# and Silur?
+nrow(res_sig_1B[which(res_sig_1B$log2FoldChange<0) , ])
+```
+
+On which chromosome are these DE genes?
+```{r}
+a=table(res_sig_1B$group)
+a=a[a!=0]
+par(mfrow=c(1,1))
+barplot(a, col=my_colors[13], ylab="number of DE genes on K", xlab="chromosome")
+```
+
+We can see that most of the DE genes are located on the chromosome 1B itself. How many DE genes are on the 1B? What proportion of DE genes are on the 1?
+```{r}
+#nbr de DEG avec position connue:
+sum(a)
+
+# Nbr on the 1B:
+a["1B"]
+
+# Percentage in %
+round( a["1B"]/sum(a)*100 , 2)
+
+# Nbr on the 1B in the IC 1.2 - 14.1:
+num=nrow(res_sig_1B[which(res_sig_1B$group=="1B" & res_sig_1B$position>1.5 & res_sig_1B$position<14.1 ),])
+num
+# in %
+num/sum(a)
+```
+
+So we have 201 genes that are DEG. 
+
+Let's show the annotation of this genes:
+```{r}
+ANOT[which(ANOT$Gene.stable.ID%in%res_sig_1B$Row.names),-2]
+```
+
+
+34 of the DEG that have physical localization (25%) are on chromosome 1B.
+
+Representation on the chromosome 1B? Each blue point represent a DE gene. The pink zone is the IC of the QTL 1B. The Y axis gives the Log2Foldchange: it is the lod of the difference of expression between alleles A and B.
+```{r}
+AA=res_sig_1B[which(res_sig_1B$group=="1B"), ]
+plot(AA$log2FoldChange ~ AA$position, bty="n", ylim=c(-2.5, 2.5) , xlab="physical position (Mb)", ylab="Log2FoldChange", pch=20, cex=2, col=rgb(0.1,0.3,0.5,0.5))
+abline(h=0, col="grey")
+rect(1.5,-4,5,4, col=rgb(0.5,0.1,0.1,0.05), border=F)
+text(25,1.9,"IC of QTL 1B" , col=rgb(0.5,0.1,0.1,0.3))
+```
+
+Most of the DE genes are located on chromosome 1B (~20%). Almost all of them are situated in the confidence interval of the QTL of chromosome 1B!
+Let's zooom on this part.
+
+How many genes are known to be in this IC in total? --> should be the same as described in the QTL part.
+```{r}
+interesting_pos=POS[ which(POS$group=="1B" & POS$position>1.5 & POS$position<5) , ]
+nrow(interesting_pos)
+```
+
+Let's represent all these genes with a grey line. Then, we show the DE genes with a blue point.
+```{r}
+plot(AA$log2FoldChange ~ AA$position, bty="n", ylim=c(-2.5, 2.5) , xlab="physical position (Mb)", ylab="Log2FoldChange", pch=20, cex=2, col=rgb(0.1,0.3,0.5,0.5), xlim=c(0.5,2.8))
+abline(h=0, col="grey")
+abline(v=POS[which(POS$group=="1B") , 3] , col="grey", lwd=0.6)
+```
+
+
+Let's do an enrichment analysis on the 201 DEG interesting genes. The goal is to see if some groups of GOterms are over represented.
+```{r}
+# vector with all genes
+all_genes=rownames(data)
+# vector with DE genes we want to study for enrichment:
+DE_genes=res_sig_1B$Row.names
+# change format
+DE_genes=as.integer(all_genes%in%DE_genes)
+names(DE_genes)=all_genes
+# gene length in the good order?
+LEN=LEN[match(rownames(data), LEN$contig_name),]
+# liste des Go dans le bon ordre?
+ANOT=ANOT[match(rownames(data), ANOT$Gene.stable.ID),]
+my_go_term=ANOT[,c(1,3)]
+#Let's Calculate the Probability Weighting Function of the goseq library
+pwf=nullp(DE_genes, bias.data=LEN[,2], plot.fit=TRUE)
+#Now we can find the enriched genes
+GO.wall=goseq(pwf,gene2cat=my_go_term)
+#Let's use false discovery rate to check which GO term is really enriched:
+enriched.GO=GO.wall[p.adjust(GO.wall$over_represented_pvalue,method="BH")<0.05 , ]
+head(enriched.GO)
+```
+--> One enriched category: GO:0015934.  
+Let's try to consider only the DEgenes of the 1B chromosome:
+
+```{r}
+# vector with all genes
+all_genes=rownames(data)
+# vector with DE genes we want to study for enrichment:
+DE_genes=res_sig_1B$Row.names[which(res_sig_1B$group=="1B")]
+# change format
+DE_genes=as.integer(all_genes%in%DE_genes)
+names(DE_genes)=all_genes
+# gene length in the good order?
+LEN=LEN[match(rownames(data), LEN$contig_name),]
+# liste des Go dans le bon ordre?
+ANOT=ANOT[match(rownames(data), ANOT$Gene.stable.ID),]
+my_go_term=ANOT[,c(1,3)]
+#Let's Calculate the Probability Weighting Function of the goseq library
+pwf=nullp(DE_genes, bias.data=LEN[,2], plot.fit=TRUE)
+#Now we can find the enriched genes
+GO.wall=goseq(pwf,gene2cat=my_go_term)
+#Let's use false discovery rate to check which GO term is really enriched:
+#enriched.GO=GO.wall$category[p.adjust(GO.wall$over_represented_pvalue,method="fdr")<0.1]
+enriched.GO=GO.wall[GO.wall$over_represented_pvalue<0.05 , ]
+head(enriched.GO)
+```
+--> Nothing significant...
+
+
+
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+##4.2/ DE-genes for 5A QTLs
+
+How many DE genes do we have?
+```{r}
+nrow(res_sig_5A)
+
+# Overexpressed for Dic2 
+nrow(res_sig_5A[which(res_sig_5A$log2FoldChange>0) , ])
+# and Silur?
+nrow(res_sig_5A[which(res_sig_5A$log2FoldChange<0) , ])
+```
+
+On which chromosome are these DE genes?
+```{r}
+a=table(res_sig_5A$group)
+a=a[a!=0]
+par(mfrow=c(1,1))
+barplot(a, col=my_colors[13], ylab="number of DE genes on K", xlab="chromosome")
+```
+
+We can see that most of the DE genes are located on the chromosome 5A itself, and a few others on chromosome 2B How many DE genes are on the 5A? What proportion of DE genes are on the 5A?
+```{r}
+#nbr de DEG avec position connue:
+sum(a)
+
+# Nbr on the 5A:
+a["5A"]
+
+# Percentage in %
+round( a["5A"]/sum(a)*100 , 2)
+
+# Nbr on the 5A in the IC 118 - 143:
+num=nrow(res_sig_5A[which(res_sig_5A$group=="5A" & res_sig_5A$position>118 & res_sig_5A$position<143 ),])
+num
+# in %
+num/sum(a)
+```
+
+
+Representation on the chromosome 5A? Each blue point represent a DE gene. The pink zone is the IC of the QTL 5A. The Y axis gives the Log2Foldchange: it is the lof of the difference of expression between alleles A and B.
+```{r}
+AA=res_sig_5A[which(res_sig_5A$group=="5A"), ]
+plot(AA$log2FoldChange ~ AA$position, bty="n", ylim=c(-2.5, 2.5) , xlab="physical position (Mb)", ylab="Log2FoldChange", pch=20, cex=2, col=rgb(0.1,0.3,0.5,0.5), xlim=c(0,250))
+abline(h=0, col="grey")
+rect(118,-4,143,4, col=rgb(0.5,0.1,0.1,0.05), border=F)
+text(168,1.9,"IC of QTL 5A" , col=rgb(0.5,0.1,0.1,0.3))
+```
+
+Most of the DE genes are located on chromosome 5A (~70%). All of them are situated in the confidence interval of the QTL of chromosome 5A!
+Let's zooom on this part.
+
+How many genes are known to be in this IC in total?
+```{r}
+interesting_pos=POS[ which(POS$group=="5A" & POS$position>118 & POS$position<143) , ]
+nrow(interesting_pos)
+```
+
+Let's represent all these genes with a grey line. Then, we show the DE genes with a blue point.
+```{r}
+plot(AA$log2FoldChange ~ AA$position, bty="n", ylim=c(-2.5, 2.5) , xlab="physical position (Mb)", ylab="Log2FoldChange", pch=20, cex=2, col=rgb(0.1,0.3,0.5,0.5), xlim=c(118,143))
+abline(h=0, col="grey")
+abline(v=POS[which(POS$group=="5A") , 3] , col="grey", lwd=0.6)
+```
+
+Now, let's have a look to the annotation of the DE genes?
+over represented.
+```{r}
+# vector with all genes
+all_genes=rownames(data)
+# vector with DE genes we want to study for enrichment:
+DE_genes=res_sig_5A$Row.names
+# change format
+DE_genes=as.integer(all_genes%in%DE_genes)
+names(DE_genes)=all_genes
+# gene length in the good order?
+LEN=LEN[match(rownames(data), LEN$contig_name),]
+# liste des Go dans le bon ordre?
+ANOT=ANOT[match(rownames(data), ANOT$Gene.stable.ID),]
+my_go_term=ANOT[,c(1,3)]
+#Let's Calculate the Probability Weighting Function of the goseq library
+pwf=nullp(DE_genes, bias.data=LEN[,2], plot.fit=TRUE)
+#Now we can find the enriched genes
+GO.wall=goseq(pwf,gene2cat=my_go_term)
+#Let's use false discovery rate to check which GO term is really enriched:
+enriched.GO=GO.wall[p.adjust(GO.wall$over_represented_pvalue,method="BH")<0.05 , ]
+head(enriched.GO)
+```
+No category enriched.
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+##4.3/ Common DE Genes
+
+Let's get the genes that have been found DE for both QTL 1B and 5A:
+```{r}
+which(res_sig_5A$Row.names%in%res_sig_1B$Row.names)
+```
+There is absolutely no DE genes in commmon. That could mean that the mechanism of resistance provided by QTL 1B and 5A are distinct?
+
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#5/ DE genes related to phenoype - one trait
+
+In the previous part we did a differentially expressed genes detection between allele A and B of our 2 main QTLs. In this part we will use a phenotypic trait to find the DE genes. So we will find every genes that are correlated with a trait.
+Let's start with Montbartier.
+
+```{r}
+# Threshold of detection:
+thres=0.05
+
+#Get the genes related with BAR14_PEPILAUDPC_blup
+DE_genes_BAR14_PEPILAUDPC_blup=get_DE_genes_from_pheno("BAR14_PEPILAUDPC_blup")
+```
+
+Let's have a look to the distribution of pval adjusted.  
+We are supposed to have a "L" distribution if we want to get DE genes considering adjusted pvalue (False Discovery Rate).  
+
+```{r}
+hist(DE_genes_BAR14_PEPILAUDPC_blup$pvalue , main=paste("BAR14_PEPILAUDPC_blup | min= ",round(min(DE_genes_BAR14_PEPILAUDPC_blup$padj, na.rm=T),2),sep="") , col="grey" , xlab="Pval adj")
+```
+
+Let's have a look to the 2 most DE genes.
+```{r}
+a=DE_genes_BAR14_PEPILAUDPC_blup[ order(DE_genes_BAR14_PEPILAUDPC_blup$padj) , ]
+head(a,2)
+```
+
+Relationship between the trait and the most correlated gene. (Log scale)
+```{r}
+  # Call the function
+plot_cor_genes("BAR14_PEPILAUDPC_blup", "Traes_5AL_B65EF5518")
+```
+
+Let's get the significant DE genes  
+```{r}
+res_sig=as.data.frame( DE_genes_BAR14_PEPILAUDPC_blup[ which(DE_genes_BAR14_PEPILAUDPC_blup$padj<thres) , ] )
+res_sig=merge(res_sig, POS, by.x="row.names", by.y=2, all.x=T)
+```
+
+How many DE genes do we have?
+```{r}
+nrow(res_sig)
+```
+
+On which chromosome are these DE genes?
+```{r}
+a=table(res_sig$group)
+a=a[a!=0]
+par(mfrow=c(1,1))
+barplot(a, col=my_colors[13], ylab="number of DE genes on K", xlab="chromosome")
+```
+
+We can see that most of the DE genes are located on the chromosome 1B itself. How many DE genes are on the 1B? What proportion of DE genes are on the 1?
+```{r}
+# Nbr
+a["1B"]
+# Percentage in %
+round( a["1B"]/sum(a)*100 , 2)
+```
+
+Representation on the chromosome 1B? Each blue point represent a DE gene. The pink zone is the IC of the QTL 1B. The Y axis gives the Log2Foldchange: it is the lof of the difference of expression between alleles A and B.
+```{r}
+AA=res_sig[which(res_sig$group=="1B"), ]
+plot(AA$log2FoldChange ~ AA$position, bty="n" , xlab="physical position (Mb)", ylab="Log2FoldChange", pch=20, cex=2, col=rgb(0.1,0.3,0.5,0.5))
+abline(h=0, col="grey")
+rect(0.5,-4,2.8,4, col=rgb(0.5,0.1,0.1,0.05), border=F)
+text(25,1.9,"IC of QTL 1B" , col=rgb(0.5,0.1,0.1,0.3))
+```
+
+Most of the DE genes are located on chromosome 1B (~25%). Almost all of them are situated in the confidence interval of the QTL of chromosome 1B!
+Let's zooom on this part.
+
+How many genes are known to be in this IC in total?
+```{r}
+interesting_pos=POS[ which(POS$group=="1B" & POS$position>0.5 & POS$position<2.8) , ]
+nrow(interesting_pos)
+```
+
+Let's represent all these genes with a grey line. Then, we show the DE genes with a blue point.
+```{r}
+plot(AA$log2FoldChange ~ AA$position, bty="n" , xlab="physical position (Mb)", ylab="Log2FoldChange", pch=20, cex=2, col=rgb(0.1,0.3,0.5,0.5), xlim=c(0.5,2.8))
+abline(h=0, col="grey")
+abline(v=POS[which(POS$group=="1B") , 3] , col="grey", lwd=0.6)
+```
+
+
+
+[//]: =========================================================================================================================
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#6/ DE genes related to phenoype - every trait
+Let's find the genes related with every traits. We do the same thing than in the previous part, but for each trait one by one. this is done on CC2. A R script allows to do it: Find_related_genes_DESeq2.R. We can use it on CC2 using:
+
+```
+# Envoi du script par tranche de 12 traits. J'ai 318 variables.
+cd ~/work/FUSA/DESEQ
+seq 1 13 318 | wc -l
+for i in $(seq 1 13 318) ; do ((a=$i+12)) ; qsub -q normal.q -b yes -cwd -N tmp_rela_gene "Rscript Find_related_genes_DESeq2.R  $i $a" ; done
+# Regroupement des fichiers
+cat resultat_DE_pheno_1_* | head -1   > result_relation_gene_trait.txt
+cat resultat_DE_pheno_* | grep -v "baseMean" >> result_relation_gene_trait.txt
+scp holtz@CC2-login.cirad.fr:work/FUSA/DESEQ/result_* .
+#vérif:
+ls resultat_DE_pheno_* | wc -l
+```
+
+Now we can try to analyze it!
+Let's merge this information with the physical positions!
+```{r}
+REL=merge(REL, POS, by.x=1, by.y=2, all.x=T)
+REL$group=droplevels(REL$group)
+```
+
+How many DE genes for every trait?
+```{r}
+#Combien on a de trait différents:
+nlevels(REL$carac)
+barplot(table(REL$carac), names.arg="")
+```
+
+This number is really different from on trait to another. Let's try to understand what kind of trait has a lot of DE genes?
+
+Let's check the number of DE genes for the agronomical variables?
+```{r}
+par(mfrow=c(1,3), mar=c(10,4,2,2))
+barplot( table(droplevels(HEI$carac))  , las=2, col=my_colors[1], ylim=c(0,2400))
+barplot( table(droplevels(EPI$carac))  , las=2, col=my_colors[2], ylim=c(0,2400))
+barplot( table(droplevels(FLO$carac))  , las=2, col=my_colors[3], ylim=c(0,2400))
+```
+We can see the precocity is highly related with the expression of numerous genes!
+
+Now, let's have a look to the DON variable:
+```{r}
+par(mfrow=c(1,1), mar=c(10,4,2,2))
+barplot( table(droplevels(DON$carac))  , las=2, col=my_colors[1], ylim=c(0,2400))
+```
+Almost no signal. But some DON variables are missing. Probably a mistake in the script on CC2???
+
+
+Concerning the resistance, let's have a look to the 4 variables
+```{r}
+par(mfrow=c(1,1), mar=c(11,4,2,2))
+my_NOT=table(droplevels(NOT$carac)) ; barplot( my_NOT  , las=2, col=my_colors[as.numeric(as.factor(gsub("_.*","",names(my_NOT))))])
+my_PEPI=table(droplevels(PEPI$carac)) ; barplot( my_PEPI , las=2, col=my_colors[as.numeric(as.factor(gsub("_.*","",names(my_PEPI))))])
+my_NEPIL=table(droplevels(NEPIL$carac)) ; barplot( my_NEPIL, las=2, col=my_colors[as.numeric(as.factor(gsub("_.*","",names(my_NEPIL))))])
+my_PEPIL=table(droplevels(PEPIL$carac)) ; barplot( my_PEPIL  , las=2, col=my_colors[as.numeric(as.factor(gsub("_.*","",names(my_PEPIL))))])
+```
+There is always a huge difference between rep1, rep2 and blup. A lot of cases where the number of rep1 or rep2 is really huge. A good option would probably be to use BLUPs only, they should be more reliable, and it will decrease the numbers of variables we have to study.
+
+
+```{r}
+par(mfrow=c(1,4), mar=c(10,4,2,2))
+barplot( my_NOT[grep("blup" , names(my_NOT))]  ,ylim=c(0,700), las=2, col=my_colors[as.numeric(as.factor(gsub("_.*","",names(my_NOT[grep("blup" , names(my_NOT))] ))))])
+barplot( my_PEPI[grep("blup" , names(my_PEPI))]  ,ylim=c(0,700), las=2, col=my_colors[as.numeric(as.factor(gsub("_.*","",names(my_PEPI[grep("blup" , names(my_PEPI))] ))))])
+barplot( my_NEPIL[grep("blup" , names(my_NEPIL))]  ,ylim=c(0,700), las=2, col=my_colors[as.numeric(as.factor(gsub("_.*","",names(my_NEPIL[grep("blup" , names(my_NEPIL))] ))))])
+barplot( my_PEPIL[grep("blup" , names(my_PEPIL))]  ,ylim=c(0,700), las=2, col=my_colors[as.numeric(as.factor(gsub("_.*","",names(my_PEPIL[grep("blup" , names(my_PEPIL))] ))))])
+```
+
+Still to many variable. Let's limit the analysis to the last notation + AUDPC. And we show the chromosomes involved in these DEGenes.
+```{r}
+my_vec=table(droplevels(INTEREST$carac))
+par(mfrow=c(1,1))
+my_barplot(INTEREST, legend=T)
+# Zooming on the bottom of the plot
+my_barplot(INTEREST, legend=T, ylim=c(0,50))
+```
+
+
+How many genes are involved at least one time with disease?
+```{r}
+nb_DE_genes_interest=length(unique(INTEREST$gene))
+```
+About 'r nb_DE_genes_interest' genes are DE once ore more.  
+Do we have genes that are often detected as involved? Let's show the distribution of the occurence of a genes in the DEgenes list:
+```{r}
+a=table(INTEREST$gene)
+a=a[order(a, decreasing=T)]
+a=a[which(a!=0)]
+par(mfrow=c(1,1), mar=c(5,4,3,3)) ; barplot(table(a), col=my_colors[4], xlab="Number of genes found as DE 1, 2 or 3 times")
+DE_2times=length(a[a==2])
+DE_3times=length(a[a==3])
+interesting_genes=names( a[a>1] )
+```
+Most of the DE genes are found as DE once only. 'r DE_2times' genes have been found as DE 2 times, and 'r DE_3times' found DE 3 times.
+--> Bug dans le script de recherche des DE --> ajoute un chiffre au nom des gènes...
+```{r}
+m=data.frame(a)
+m=merge(m,POS,by.x=1, by.y=2, all.x=T)
+head(m)
+barplot( t(table(m$Freq, m$group)) , col=my_colors, legend=T)
+```
+
+So no interesting pattern yet.
+We can have a look to the GO term of the 3 times detected genes:
+```{r}
+m=data.frame(a[a>2])
+m$Var1=substr(as.character(m$Var1), 1,19)
+m=merge(m,ANOT,by.x=1, by.y=1, all.x=T)
+m=merge(m,POS,by.x=1, by.y=2, all.x=T)
+```
+
+Dans la liste on a une défensine: Traes_1BS_484C586DD.1.  
+Sequence:  
+TCTCTCTCTCTGTGGCTATATAAACTCCTGCATCGTCTTGTATCTACACCACCTTGGCAT
+TGCTAGACAGGACAGCCTATATTGACGTAGACGCAGCAGGAGCAGCAGCAGCGAACTCTG
+TCAGTTCTCTAGCATCTCCGGTGAAGCAAGCAAGCAGAGAGATGGCGTCCCCTCGTCGCA
+TGGCCGCCGCGCCCGCCGTCCTCCTCCTCGTCCTGCTCCTCCTCGTCGCCACGGAGATGG
+GGACGATGAAGACGGCGGAGGCCCGGACGTGCCTGTCGCAGAGCCACAAGTTCAAGGGCA
+CCTGCCTCAGCAACAGCAACTGCGCCGGCGTGTGCCGCACCGAGAACTTCCCCGACGGCG
+AGTGCAACTCCCACCGCCTCGAGCGCAAGTGCTTCTGCAAGCGCACCTGCTAAGCAAGCC
+CAGTCCGCGCTACTGGCTCTGGCTAGCTAGACTGCTAGATCAGCAGCCATGCCGTCAGTT
+AGATCTGTTCGTCCCTACTTTTGTTTCCGTTTGCTTTACGTTGCTCTTGGGGATGACTGA
+AAATAAAGTAGCTACCTACATCCTCTGCATTGGCTGTTCCACTGCATGTTGTCTAAGTGT
+TTCTGGCTTTAGTTTGTGCTGTTGATGTAATAACGATGCCACTAACAATTTGGCTTCTAT
+GTGTTGTGTTGAAACTTGGAATCAATCGGTTATTAGTTGGCTTGTCTGTTAAACGGAG
+
+
+Ces gènes qui ressortent plusieurs fois ils ressortent:
+- Sur quelles types de parcelles?
+- Sur quels types de phéno?
+
+Faire des vérifs sur ces données un poil louches.
+
+Pourquoi pas une liste de gène qui sortirait plutot sur les 300, et une plus sur les 500?
+
+Ya t'il un lien entre trouver un QTL et trouver des gènes DE?
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#7/ Enrichment Analysis
+OK, so we found genes that are probably linked with the resistance to Fusariose. Let's try to caracterize their annotation. This step is names Enrichment Analysis. The annotation (GO terms) is provided by Ensembl Plant. We use the package GOSEQ to do this enrichment analysis. This package has been specially computed for differentially expressed genes enrichment analysis. It takes in account the length of genes, because small transcript have less reads and thus less chance to be DE.
+
+First we need to prepare data.
+```{r}
+# vector with all genes
+all_genes=rownames(data)
+# vector with DE genes we want to study for enrichment:
+DE_genes=interesting_genes
+# change format
+DE_genes=as.integer(all_genes%in%DE_genes)
+names(DE_genes)=all_genes
+# gene length in the good order?
+LEN=LEN[match(rownames(data), LEN$contig_name),]
+# liste des Go dans le bon ordre?
+ANOT=ANOT[match(rownames(data), ANOT$Gene.stable.ID),]
+my_go_term=ANOT[,c(1,3)]
+```
+
+Let's Calculate the Probability Weighting Function of the goseq library
+```{r}
+pwf=nullp(DE_genes, bias.data=LEN[,2], plot.fit=TRUE)
+```
+
+Now we can find the enriched genes, using 2 methods. An compare --> same result
+```{r}
+GO.wall=goseq(pwf,gene2cat=my_go_term)
+GO.samp=goseq(pwf,gene2cat=my_go_term,method="Sampling",repcnt=1000)
+plot(log10(GO.wall[,2]), log10(GO.samp[match(GO.samp[,1],GO.wall[,1]),2]), xlab="log10(Wallenius p-values)", ylab="log10(Sampling p-values)" )
+abline(0,1,col=3,lty=2)
+```
+
+Let's use false discovery rate to check which GO term is really enriched:
+```{r}
+enriched.GO=GO.wall$category[p.adjust(GO.wall$over_represented_pvalue,method="BH")<.05]
+head(enriched.GO)
+```
+
+But what does these GO terms mean?
+```{r}
+for(go in enriched.GO){
+        print(GOTERM[[go]])
+        cat("--------------------------------------\n")
+}
+```
+
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#8/ Clustering the DE genes.
+OK so we have several genes that are linked with the resistance to Fusariose. It would be interesting to group them in genes family that follow the same patterns of expression. 
+
+## Using Rlogdds 
+First we need to compute the Rlog transformation of DESeq2, it is a way of normalization of the expression dataset.
+```{r, eval=F}
+# First we need the Log2 transformation.
+don=data
+sum_expe=data.frame(geno=rownames(pheno),trait=rnorm(nrow(pheno)) )
+# in the expression matrix, I keep only individuals genotyped for the marker
+don=don[ , which(colnames(don)%in%sum_expe[,1]) ]
+# reorder sum_expe
+sum_expe=sum_expe[match(colnames(don),sum_expe[,1] ), ] 
+rownames(sum_expe)=sum_expe[,1]
+# Call DeSeq2
+dds <- DESeqDataSetFromMatrix(don, sum_expe, formula( ~ trait) )
+dds <- DESeq(dds, test = c("Wald") )
+rlogdds=rlog(dds)
+save( rlogdds, file="~/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/Reads_counts_rlognormalized.R", col.names=T, row.names = T, quote=F)
+```
+
+```{r}
+load("~/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/Reads_counts_rlognormalized.R")
+```
+
+OK now the normalization is done.
+
+### 1B DEG
+Let's keep only the DE genes in this rlogdds dataset:
+```{r}
+rlogdds_1B=assay(rlogdds[rownames(rlogdds)%in%res_sig_1B$Row.names])
+
+```
+
+What is the mean expression of these genes?
+```{r}
+hist(rowMeans(rlogdds_1B))
+```
+
+Show the heatmap of this matrix, it is like looking the table, but with colors highlighting the gene expressions:
+```{r}
+library( "gplots" )
+#The expression matrix
+heatmap.2( t(rlogdds_1B), scale="none", trace="none", dendrogram="both", col = colorRampPalette( rev(brewer.pal(9, "RdBu")) )(255))
+```
+
+Plot the relationship of 16 random couples
+```{r}
+par(mfrow=c(4,4))
+for(i in c(22:25)){ for(j in c(32:35)){ 
+  plot(rlogdds_1B[i,], rlogdds_1B[j,])
+}}
+```
+On a un peu de tout, mais étonnemment, il ne semble pas y avoir beaucoup de relation entre expression des gènes différentiellement exprimés... Louche?
+
+Du coup on peu faire une petite vérif ?
+```{r}
+par(mfrow=c(3,10))
+for(i in rownames(rlogdds_1B)[1:30]){
+  boxplot_DE_genes(marker_1B, i , data.frame(assay(rlogdds))) 
+}
+```
+A priori on a bien des gènes DEG.
+
+Calculate distance between genes? Always the same problem, we can use pearson correlation OR euclidean distance.
+```{r}
+dist_cor_1B=cor(t(rlogdds_1B))
+dist_euc_1B=dist(rlogdds_1B)
+```
+
+Histogram of these distances?
+```{r}
+par(mfrow=c(1,2))
+hist(dist_cor_1B)
+hist(dist_euc_1B)
+```
+
+And now, clusterise it, and show the heatmap of these distance matrix
+```{r}
+#The distance matrix
+heatmap.2( as.matrix(dist_euc_1B), trace="none", dendrogram ="both", key=T, col=colorRampPalette( rev(brewer.pal(9, "RdBu")) )(255))
+heatmap.2( as.matrix(dist_cor_1B), trace="none", col=colorRampPalette( rev(brewer.pal(9, "RdBu")) )(255))
+```
+
+Let's do a MDS. Attention, je fais 1-cor pour avoir des distances. J'obtiens bien 2 groupes, les sur et les sous expr pour Dic2.
+```{r}
+dist=1-dist_cor_1B
+fit <- cmdscale(as.dist(dist) , eig=TRUE, k=2) 
+x <- fit$points[,1]
+y <- fit$points[,2]
+par(mar=c(4,4,2,2))
+#Get the chromosome of every gene.
+a=rownames(dist)
+b=merge(a,POS, by.x=1, by.y=2, all.x=T)
+c=b[match(rownames(dist), b$x) , ]
+color_mds=my_colors[as.numeric(as.factor(c$group))]
+par(mfrow=c(1,1))
+plot(x, y, xlab="Coordinate 1", ylab="Coordinate 2", main="", pch=20 , cex=3  , col=color_mds) # , xlim=c(-0.02, 0.02), ylim=c(-0.05, 0.05))
+```
+
+
+Neural network?
+```{r}
+#I calculte correlation between each pair of markers.
+library(igraph)
+dist=dist_cor_1B
+#dist=dist[1:10 , 1:10]
+dist[dist<0.5]=0
+diag(dist)=0
+ 
+# First I ask to Igraph to calculate the best position of each individuals, doing iterations
+g1<-graph.adjacency(dist,weighted="TRUE",mode="undirected")
+lay<-layout.fruchterman.reingold(grap=g1,niter=6000)
+
+#Get the chromosome of every gene.
+a=rownames(dist)
+b=merge(a,POS, by.x=1, by.y=2, all.x=T)
+c=b[match(rownames(dist), b$x) , ]
+color_igraph=my_colors[as.numeric(as.factor(c$group))]
+
+# Get the allele of every gene?
+b=res_sig_1B[, c(1,3)]
+c=b[match(rownames(dist), b$Row.names) , ]
+shape_igraph=ifelse(c$log2FoldChange>0, "square"  , "circle")
+
+# Then I make the plot. I ask to show the know structure of the population
+par(mar=c(0.5,0.5,0.5,0.5))
+plot.igraph(g1, 
+            layout=lay,
+            vertex.shape=shape_igraph,
+            vertex.label="" ,
+            vertex.color=color_igraph , 
+            vertex.size=8 , 
+            main="")
+ 
+#Finally I add a legend
+legend("topleft", legend = c("expression Dic2 > Silur" , "expression Silur > Dic2"), 
+       col = "black", 
+       pch = c(15,20), bty = "n",  pt.cex = c(2,3), cex = 1.2 , 
+       text.col = "grey", horiz = FALSE, inset = c(0.1, 0.1))
+```
+
+
+
+
+
+
+
+### 5A DEG
+Let's keep only the DE genes in this rlogdds dataset:
+```{r}
+rlogdds_5A=assay(rlogdds[rownames(rlogdds)%in%res_sig_5A$Row.names])
+```
+
+What is the mean expression of these genes?
+```{r}
+par(mar=c(5,4,2,2))
+hist(rowMeans(rlogdds_5A))
+```
+
+Show the heatmap of this matrix, it is like looking the table, but with colors highlighting the gene expressions:
+```{r}
+#The expression matrix
+heatmap.2( t(rlogdds_5A), scale="none", trace="none", dendrogram="both", col = colorRampPalette( rev(brewer.pal(9, "RdBu")) )(255))
+```
+
+Plot the relationship of 16 random couples
+```{r}
+par(mfrow=c(4,4))
+for(i in c(22:25)){ for(j in c(32:35)){ 
+  plot(rlogdds_5A[i,], rlogdds_5A[j,])
+}}
+```
+On a un peu de tout, mais étonnemment, il ne semble pas y avoir beaucoup de relation entre expression des gènes différentiellement exprimés... Louche?
+
+Du coup on peu faire une petite vérif ?
+```{r}
+par(mfrow=c(3,10))
+for(i in rownames(rlogdds_5A)[1:30]){
+  boxplot_DE_genes(marker_5A, i , data.frame(assay(rlogdds))) 
+}
+```
+A priori on a bien des gènes DEG.
+
+Calculate distance between genes? Always the same problem, we can use pearson correlation OR euclidean distance.
+```{r}
+dist_cor_5A=cor(t(rlogdds_5A))
+dist_euc_5A=dist(rlogdds_5A)
+```
+
+Histogram of these distances?
+```{r}
+par(mfrow=c(1,2))
+hist(dist_cor_5A)
+hist(dist_euc_5A)
+```
+
+And now, clusterise it, and show the heatmap of these distance matrix
+```{r}
+#The distance matrix
+heatmap.2( as.matrix(dist_euc_5A), trace="none", dendrogram ="both", key=T, col=colorRampPalette( rev(brewer.pal(9, "RdBu")) )(255))
+heatmap.2( as.matrix(dist_cor_5A), trace="none", col=colorRampPalette( rev(brewer.pal(9, "RdBu")) )(255))
+```
+
+Let's do a MDS. Attention, je fais 1-cor pour avoir des distances. J'obtiens bien 2 groupes, les sur et les sous expr pour Dic2.
+```{r}
+dist=1-dist_cor_5A
+fit <- cmdscale(as.dist(dist) , eig=TRUE, k=2) 
+x <- fit$points[,1]
+y <- fit$points[,2]
+par(mar=c(4,4,2,2))
+#Get the chromosome of every gene.
+a=rownames(dist)
+b=merge(a,POS, by.x=1, by.y=2, all.x=T)
+c=b[match(rownames(dist), b$x) , ]
+color_mds=my_colors[as.numeric(as.factor(c$group))]
+par(mfrow=c(1,1))
+plot(x, y, xlab="Coordinate 1", ylab="Coordinate 2", main="", pch=20 , cex=3  , col=color_mds) # , xlim=c(-0.02, 0.02), ylim=c(-0.05, 0.05))
+```
+
+
+Neural network?
+```{r}
+#I calculte correlation between each pair of markers.
+dist=dist_cor_5A
+dist[which(dist<0.5) ]=0
+diag(dist)=0
+ 
+# First I ask to Igraph to calculate the best position of each individuals, doing iterations
+g1<-graph.adjacency(dist,weighted="TRUE",mode="undirected")
+lay<-layout.fruchterman.reingold(grap=g1,niter=6000)
+
+#Get the chromosome of every gene.
+a=rownames(dist)
+b=merge(a,POS, by.x=1, by.y=2, all.x=T)
+c=b[match(rownames(dist), b$x) , ]
+color_igraph=my_colors[as.numeric(as.factor(c$group))]
+
+# Get the allele of every gene?
+b=res_sig_5A[, c(1,3)]
+c=b[match(rownames(dist), b$Row.names) , ]
+shape_igraph=ifelse(c$log2FoldChange>0, "square"  , "circle")
+
+# Then I make the plot. I ask to show the know structure of the population
+par(mar=c(0.5,0.5,0.5,0.5))
+plot.igraph(g1, 
+            layout=lay,
+            vertex.shape=shape_igraph,
+            vertex.label="" ,
+            vertex.color=color_igraph , 
+            vertex.size=8 , 
+            main="")
+ 
+#Finally I add a legend
+legend("topleft", legend = c("expression Dic2 > Silur" , "expression Silur > Dic2"), 
+       col = "black", 
+       pch = c(15,20), bty = "n",  pt.cex = c(2,3), cex = 1.2 , 
+       text.col = "grey", horiz = FALSE, inset = c(0.1, 0.1))
+```
+
+
+## Using HTSCluster?
+To do so, we are going to use the library HTSCluster developped by Andrea RAU (INRA Jouy).
+
+```{r}
+library(HTSCluster) 
+
+# We keep only genes with at least 5000 reads in total. 25365 genes remains.
+don=data[which(rowSums(data)>5000) , ]
+```
+
+
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+

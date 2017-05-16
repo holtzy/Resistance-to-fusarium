@@ -471,7 +471,7 @@ qsub -q bigmem.q -b yes -cwd -N reads2snp "/gs7k1/projects/g2pop/HOLTZ_YAN_DATA/
 cd /gs7k1/projects/g2pop/HOLTZ_YAN_DATA/DIC2_SILUR/RNA_SEQ_OCTOBRE_2015/MAPPING_ON_AD/SNP
 qsub -q normal.q -b yes -cwd -N obtention_snp "/usr/local/bioinfo/python/2.7.9/bin/python2.7 /gs7k1/projects/g2pop/HOLTZ_YAN_DATA/programmes/concatenate_alr_and_gen.py  -alr  ../READS2SNP/output.alr  -gen ../READS2SNP/output.gen -out SNP_FUSA_on_ADr_cov10_pval09  -cov 10 -pvalue 0.9"
 
-#Combien de SNP en tout? --> 73297
+#Combien de SNP en tout?
 wc -l SNP_FUSA_on_ADr_cov10_pval09
 
 # Combien de SNP clean ( FIS>=0.8 / He>=0.32 et >80 indiv) --> 10721

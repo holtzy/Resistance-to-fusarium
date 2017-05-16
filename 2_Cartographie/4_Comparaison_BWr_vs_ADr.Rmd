@@ -1,0 +1,263 @@
+---
+title: "Comparing Genomic Sources of Information"
+author: "Yan Holtz"
+date: "30th May 2016"
+output:
+  html_document:
+    code_folding: hide
+---
+
+
+# Introduction
+This document aims to compare the genomic informations provided by:  
+- **BWr**: The release 28 of Ensembl concerning the Bread Wheat Transcriptome (IWGSC for fasta + Popseq American for physical position)
+- **ADr**: Assaf genomic data comming from Dicoccoides
+
+We have a genetic map containing **16000 Markers**. We are going to compare genetic order of contig with physical order provided by these 2 references.
+
+Charge some libraries that will be useful
+```{r results='hide', message=FALSE, warning=FALSE}
+library(tidyverse)
+library(plotly)
+```
+
+Please tell were are stored data:
+```{r}
+path="/Users/yan/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/HassaF_DATA_ISRAEL/"
+```
+
+And load data
+```{r}
+#Watch out, to reproduct analysis, you have to update the path.
+
+# Genetic map
+map=read.table("/Users/yan/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/map_avec_posi_physique.txt" , header=T )[,c(1:3)]
+colnames(map)=c("chromo_map","marker","position_map")
+
+# Assaf Data ADr
+ADr=read.table(paste(path,"hc_genes_info.tab",sep=""), header=T, sep=",")
+
+# BWr
+BWr=read.table("/Users/yan/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/physical_map_of_BW.txt", na.string="-" , header=T , dec=".")
+colnames(BWr)=c( "chromo" ,  "contig" ,"position_BWr" )
+BWr=BWr %>%  filter(!grepl("D",chromo)) %>% droplevels()
+
+```
+
+
+# 1/ Genetic Map data
+The genetic map used has been created for the **Dic2 x Silur** RILs population. SNP Markers comes from RNA-Seq + Capture (~16000 Markers). Reads have been maped on the BWr. 
+
+Let's build a figure that summarize main features of this map
+```{r}
+my_text=map %>% group_by(chromo_map) %>% summarise(Length = max(position_map), Nb=length(position_map)) %>% mutate(text = paste(chromo_map, " | ", Length, " cM | ", Nb, " SNPs")) %>% select(text)
+ggplot(map, aes(x=position_map)) + 
+  geom_density(aes(fill=chromo_map)) + 
+  theme(legend.position = "none") + 
+  facet_wrap(~chromo_map, labeller=labeller(.chromo_map=my_text))
+```
+
+
+# 2/ BWr: Ensemble release 28
+The Bread Wheat Reference (BWr) hase been found on Ensembl release 28. The physical positions are provided:
+* For the 3B it is provided by the IWGSC, very precise
+* For other chromosomes, it is provided by PopSeq experiment (Americans), *Pseudo*physical positions.
+
+Let's summarize the features of this genomic reference?
+```{r}
+# Densité en gène le long des chromosomes?
+BWr %>% mutate(pos=position_BWr/1000000) %>% 
+  ggplot( aes(x=position_BWr)) + 
+    geom_density(aes(fill=chromo, color=chromo, alpha=0.8)) + 
+    facet_wrap(~chromo, scales="free") + 
+    theme(legend.position="none", axis.text=element_blank() , axis.ticks= element_blank() ) + 
+    xlab("position in Mb")
+
+```
+
+# 3/ ADr: Assaf Data
+These data have been recovered [here](https://www.dropbox.com/sh/j4p1qjihpd2g2wv/AADh-BO1GA0yfw3N_oemFWjka?dl=0&lst=&preview=TRIDC_WEWseq_PGSB_20160501_CDS_HighConf_REPR.fasta). They have been stored on CC2 here:
+```
+/gs7k1/projects/g2pop/HOLTZ_YAN_DATA/BREAD_WHEAT_IWGSC_and_HORDEUM/DATA_ASSAF_ISRAEL
+```
+
+```{r}
+
+# Change chromosome names
+ADr$seqid=gsub("chr","",ADr$seqid)
+ADr=ADr[which(ADr$seqid!="Un"),] %>% droplevels
+
+# Taille de chaque chromosome?
+ADr %>% group_by(seqid) %>% summarise(Value = max(end)) %>% 
+	ggplot(aes(x=seqid, y=Value)) + geom_bar(stat="identity", fill=rgb(0.8,0.4,0.6,0.7)) + xlab("") + ylab("length of chromosomes")
+
+# Distribution de la taille des gènes?
+ggplot(ADr, aes(x=end-start)) + geom_histogram(fill=76) +  xlab("Genes size (pb)")
+
+# Densité en gène le long des chromosomes?
+ADr %>% mutate(pos=(end+start)/2/1000000) %>% ggplot( aes(x=pos)) + geom_density(aes(fill=seqid, color=seqid, alpha=0.5)) + facet_wrap(~seqid) + theme(legend.position="none") + xlab("position in Mb")
+```
+
+
+# 4/ Find the links
+
+The links between the BWr release 28 and the Assaf dataset is done by **blast**, and selection of **best blast hit**. This is computed on CC2 using the following code (bash and python):
+```
+Data are here on CC2
+cd /gs7k1/projects/g2pop/HOLTZ_YAN_DATA/BREAD_WHEAT_IWGSC_and_HORDEUM/DATA_ASSAF_ISRAEL
+
+# And we will blast it on the BWr release 28
+more /gs7k1/projects/g2pop/HOLTZ_YAN_DATA/BREAD_WHEAT_IWGSC_and_HORDEUM/TRANSCRIT/RELEASE_28/transcriptome_BW_without_K_D.fasta
+
+# Let's make the blast
+mkdir TMP
+cd TMP
+cat /gs7k1/projects/g2pop/HOLTZ_YAN_DATA/BREAD_WHEAT_IWGSC_and_HORDEUM/TRANSCRIT/RELEASE_28/transcriptome_BW_without_K_D.fasta | sed 's/|.*//' > bwr
+makeblastdb -in  bwr -dbtype nucl -out database
+cat ../TRIDC_WEWseq_PGSB_20160501_CDS_HighConf_REPR.fasta | sed 's/\..*//' > tmp
+qsub -q normal.q -b yes -cwd -N tmp_blast "/usr/local/bioinfo/blast+/default/bin/blastn -db database  -query tmp -outfmt '6 qseqid sseqid qstart qend qlen sstart send slen length pident evalue' > resultat_blastn"
+
+# and find the Best blast hit to make couples
+python /gs7k1/projects/g2pop/HOLTZ_YAN_DATA/programmes/find_best_blast.py -blast resultat_blastn -similarity 95 -overlap_abs 30 -overlap_rel 20 -out ../Liaison_BWr_Assaf
+
+# Clean everything
+cd ..
+rm -r TMP
+```
+
+The links between the EPOr and the Assaf dataset is done by **blast**, and selection of **best blast hit**. This is computed on CC2 using the following code (bash and python):
+```
+Data are here on CC2
+cd /gs7k1/projects/g2pop/HOLTZ_YAN_DATA/BREAD_WHEAT_IWGSC_and_HORDEUM/DATA_ASSAF_ISRAEL
+
+# And we will blast it on the EPOr
+more /gs7k1/projects/g2pop/HOLTZ_YAN_DATA/EPO/0_DATA/RESSOURCES_EPO/EPO_106_After_Homeo_Splitter.fasta
+
+# Let's make the blast
+mkdir TMP
+cd TMP
+cat /gs7k1/projects/g2pop/HOLTZ_YAN_DATA/EPO/0_DATA/RESSOURCES_EPO/EPO_106_After_Homeo_Splitter.fasta > EPO
+makeblastdb -in  EPO -dbtype nucl -out database
+cat ../TRIDC_WEWseq_PGSB_20160501_CDS_HighConf_REPR.fasta | sed 's/\..*//' > tmp
+qsub -q normal.q -b yes -cwd -N tmp_blast "/usr/local/bioinfo/blast+/default/bin/blastn -db database  -query tmp -outfmt '6 qseqid sseqid qstart qend qlen sstart send slen length pident evalue' > resultat_blastn"
+
+# and find the Best blast hit to make couples
+cat resultat_blastn | sed 's/,/@@@@@@/g' > tmpresult
+python /gs7k1/projects/g2pop/HOLTZ_YAN_DATA/programmes/find_best_blast.py -blast tmpresult -similarity 95 -overlap_abs 30 -overlap_rel 20 -out tmpbestblast
+cat tmpbestblast | sed 's/@@@@@@/,/g' > ../Liaison_EPOr_Assaf
+
+# Clean everything
+cd ..
+rm -r TMP
+```
+Now we can merge the 3 sources of information in a single file
+```{r}
+# Merge Genetic position with BWr
+fun=function(x){strsplit(x,"@")[[1]][1] }
+map$contig=unlist(lapply(as.character(map[,2]) , fun))
+map$contig=gsub("\\|TRAES.*","",map$contig)
+
+#fun=function(x){strsplit(x,"|TRAES")[[1]][1] }
+#map$contig=unlist(lapply(as.character(map$contig) , fun))
+# vérif grep("TRAES", map$contig[which(!map$contig %in% BWr$contig)])
+data=merge(map , BWr , by.x=4 , by.y=2 , all=F)
+colnames(data)=c("contig_map","chromo_map","marker_map","position_map","chromo_BWr","position_BWr")
+
+# Merge with Assaf Data
+links=read.table(paste(path,"Liaison_BWr_Hassaf",sep=""))
+data=merge(data,links,by.x=1, by.y=2, all.x=T)
+data=merge(data, ADr[,c(1,2,3)], by.x=7, by.y=1, all.x=T)
+colnames(data)[8:9]=c("chromo_ADr","position_ADr")
+```
+
+
+# 5/ Show the links
+
+## Genetic Map - BWr
+```{r, fig.align='center', fig.height=9}
+p=data %>% 
+  filter(chromo_map==chromo_BWr) %>% 
+  ggplot(aes(x=position_BWr, y=position_map, color=chromo_map, text=contig_map)) + 
+    geom_point() + 
+    facet_wrap(~chromo_map, scales="free") + 
+    theme(legend.position="none", axis.text=element_blank() , axis.ticks= element_blank() 
+    )
+ggplotly(p)
+```
+
+## Genetic Map - Assaf
+Let's make the Marey curve
+```{r, fig.align='center', fig.height=9}
+p=data %>% 
+  filter(chromo_map==chromo_ADr) %>% 
+  ggplot(aes(x=position_ADr, y=position_map, color=chromo_map, text=contig_map)) + 
+    geom_point(alpha=0.2) + 
+    facet_wrap(~chromo_map, scales="free") + 
+    theme(legend.position="none", axis.text=element_blank() , axis.ticks= element_blank() 
+    )
+ggplotly(p)
+```
+
+Spearman correlation for each chromosome?
+```{r}
+data %>% group_by(chromo_map) %>% summarise( round(cor(position_map, position_BWr, method="spearman", use="complete.obs"),2) )
+```
+
+Can we get the outsiders?
+```{r, warning=FALSE, message=FALSE}
+outsiders=data.frame(chromo_map="", contig_map="")
+for(i in levels(data$chromo_map)){
+    
+    # keep the good chromo
+    don=subset(data, chromo_map==chromo_ADr & chromo_map==i)
+
+    # Let's make a polynomial regression:
+    y=don$position_map
+    x=don$position_ADr
+    model=lm(y ~ x + I(x^2) + I(x^3) + I(x^4) + I(x^5))
+    #model=lowess(y~x)
+    myPredict <- predict( model , interval="predict" )
+   
+    # find outsiders
+    don$predict=myPredict[,1]
+    AA=don[don$predict > don$position_map+15 | don$predict < don$position_map-15 , ]
+    AA=unique(AA[,c("contig_map","chromo_map")])
+    outsiders=rbind(outsiders, AA)
+}
+```
+Who are these outsiders?
+```{r}
+outsiders$contig_map
+```
+Distribution per chromosome?
+```{r}
+table(outsiders$chromo_map)
+```
+
+Question: why do we have these outsiders? A reason could be the presence of **multiple blast hits**: a BWr contig blasts on several ADr contigs, thus the position is hard to evaluate.
+Let's verify that?
+```
+# Bash on CC2:
+for i in $(cat problem) ; do 
+  more resultat_blastn | grep $i | awk '{if($10>90){print $0}}' | cut -f1 | sort | uniq | wc -l ; 
+done
+```
+All these genes have multiple blast hits. So these wrong points are probably due to best blast hit determination mistake (we choosed the wrong homeogenome)
+
+## BWr - ADr
+```{r, fig.align='center', fig.height=9}
+p=data %>% 
+  filter(chromo_map==chromo_ADr) %>% 
+  ggplot(aes(x=position_ADr, y=position_BWr, color=chromo_map, text=contig_map)) + 
+    geom_point() + 
+    facet_wrap(~chromo_map, scales="free") + 
+    theme(legend.position="none", axis.text=element_blank() , axis.ticks= element_blank() ) 
+ggplotly(p)
+```
+
+
+
+
+
+
+	
