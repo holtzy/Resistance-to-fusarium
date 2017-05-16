@@ -1,0 +1,332 @@
+---
+title: "Polyphénol - part 2: sortir les QTLs"
+author: "Yan Holtz"
+date: "October 2016"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+  html_document:
+    toc: yes
+    toc_depth: 3
+---
+
+
+
+[//]: =========================================================================================================================
+#1/ Introduction
+This file is a supplementary data attached with the publication. It aims to describe the QTLs found for the metabolomic composites.
+
+Let's upload the file containing all the LOD scores. It contains about 4M lines, so it is quite long...(~2minutes)
+```{r}
+#Watch out, to reproduct analysis, you have to update the path.
+data=read.table("~/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/bilan_simple_marker_metabolomique.gz" , header=T , sep="," )
+# random lines of the dataset to develop quicker
+data=data[ sample( seq(1,nrow(data)) , 200000 )  , ]
+```
+
+Let's upload the physical position of every genes of the BWr
+```{r}
+POS=read.table("/Users/yan/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/physical_map_of_BW.txt", na.string="-" , header=T , dec=".") ;  colnames(POS)=c( "chromo_BW" ,  "contig" ,"position_BW" )
+```
+
+Charge some libraries that will be useful
+```{r results='hide', message=FALSE, warning=FALSE}
+library(RColorBrewer)
+library(xtable)
+library(plotly)
+library(FactoMineR)
+```
+
+Let's create a color vector for the study
+```{r}
+my_colors = brewer.pal(8, "Set2") 
+my_colors = colorRampPalette(my_colors)(50)
+```
+
+How many variables do we have? --> 116 metabolomic variables.
+```{r}
+my_carac=levels(data$variable)
+nlevels(data$variable)
+```
+
+Separate 2013 and 2014 analysis
+```{r}
+# Year
+Y13=my_carac[grep("blup13", my_carac )]
+Y14=my_carac[grep("blup14", my_carac )]
+```
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+#2/ Useful functions
+
+A function to plot a QTL and visualize the LOD scores along the chromosome. Works for several variable on a specific chromosome.
+```{r}
+plot_a_QTL=function(data, select_chromo, variable, LOD_threshold, my_ylim){
+  
+  # order data
+  data=data[ order(data$LG , data$Distance) , ]
+
+  # plot the first variable
+  a=data[data$variable==variable[1] & data$LG==select_chromo & !is.na(data$LOD) , ]
+  plot(a$LOD ~ a$Distance , type="l" , ylim=c(0,my_ylim) , ylab="LOD score" , xlab="position (cM)" , col=my_colors[1] , lwd=1.6 )
+  
+  # for every other variable, add a LOD score
+  num=1
+  for( i in c(2:length(variable))){
+    num=num+1
+    a=data[data$variable==variable[num] & data$LG==select_chromo & !is.na(data$LOD) , ]
+    points(a$LOD ~a$Distance , type="l" , ylim=c(0,my_ylim) , ylab="LOD score" , xaxt="n" , col=my_colors[num] , lwd=1.6 )
+    }
+  
+  # add lod threshold
+  abline(h=3.61 , col="grey")
+
+  # add legend
+  #legend("topright" , horiz=F , col=my_colors[c(1:length(variable))] , legend=variable , bty="n" , lty=1 , pt.cex=2, lwd=1.6)
+  #legend("topleft" , horiz=F , col="white" , legend=select_chromo , bty="n" , lty=1 , pt.cex=0, lwd=1.6)
+
+  }
+```
+
+A function to summarize all the significant QTL. Gives the max LOD score, the IC, the position etc..
+```{r}
+summary_table_for_QTL=function(data, selected_variable, LOD_threshold, size_IC){
+
+  # order data
+  data=data[ order(data$LG , data$Distance) , ]
+  my_colors=brewer.pal(5,"Paired")
+  
+  # create empty summary table
+  bil=data.frame(matrix(0,1000,9))
+  colnames(bil)=c("pop","carac","chromo","LOD_max","position","marker","IC","R2","a")
+  
+  # loop to study every variable & chromosome
+  num_line_bilan=0
+	num_chromo=0
+
+	for(chrom in levels(data$LG)){
+		num_variable=0
+		num_col=0
+		num_chromo=num_chromo+1
+
+		for(var in selected_variable){
+			num_col=num_col+1
+			current_data=data[ data$variable==var & data$LG==chrom  , ]
+			current_data=current_data[!is.na(current_data$LOD) , ]
+			signif_data=current_data[ current_data$LOD > LOD_threshold  , ]
+			
+			#Si j'ai des marqueurs significatifs
+			if(nrow(signif_data)>0){
+				
+				#Je récupère les infos de ce QTL
+				LOD_max=max(signif_data$LOD)
+				mark_max=signif_data$marqueur[signif_data$LOD==LOD_max]
+				pos_max=signif_data$Distance[signif_data$LOD==LOD_max]
+				r2_max=signif_data$R2[signif_data$LOD==LOD_max]
+				a_max=signif_data$a[signif_data$LOD==LOD_max]
+	
+				#Détermination IC --> je bloque la zone max a 30 cM
+				in_IC=current_data[ current_data$LOD > (LOD_max-size_IC) & current_data$Distance > (pos_max-30) & current_data$Distance < (pos_max+30)  , ]
+				IC_min=min(round(in_IC$Distance,2))
+				IC_max=max(round(in_IC$Distance,2))
+				
+				#Je remplie le tableau bilan
+				num_line_bilan=num_line_bilan+1
+				bil[num_line_bilan , 1]="DS"
+				bil[num_line_bilan , 2]=var
+				bil[num_line_bilan , 3]=chrom
+				bil[num_line_bilan , 4]=LOD_max
+				bil[num_line_bilan , 5]=pos_max[1]
+				bil[num_line_bilan , 6]=as.character(mark_max)[1]
+				bil[num_line_bilan , 7]=paste(IC_min, IC_max, sep="-")
+				bil[num_line_bilan , 8]=r2_max[1]
+				bil[num_line_bilan , 9]=a_max[1]
+				
+				#close 3 loops
+				}}}
+	
+# Clean and print the Table
+bil=bil[bil$pop!=0 , ]
+bil=bil[ order(bil$pop , bil$chromo , bil$carac) , ]
+return(bil)
+#close function
+}
+```
+
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+#3/ Determine LOD threshold
+We are going to use R-QTL to do some permutation and determine which is the LOD threshold over which q QTL can be considered as significant.
+(This is done on a cluster because of long computation time)
+TODO
+```
+cd /NAS/g2pop/HOLTZ_YAN_DATA/DIC2_SILUR/QTL/PUBLI
+for i in 4 7 10 13 16 ; do echo $i ; Rscript /NAS/g2pop/HOLTZ_YAN_DATA/programmes/Calculate_LOD_threshold.R genotypage.csv phenotypage.csv carte $i ; done
+more tmp.o*  |  grep -A4 "AR1"
+```
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+#4/ Table of significant QTLs
+
+
+## 2013
+
+How many metabolomic variable do we have in 2013?
+```{r}
+length(Y13)
+```
+
+Let's summarize in a table every significant QTL for 2013.
+```{r, message=FALSE, warning=FALSE}
+summary_QTL_13=summary_table_for_QTL(data, Y13, 3.61, 1.5)
+summary_QTL_13=summary_QTL_13[ order(summary_QTL_13$chromo, summary_QTL_13$LOD_max, decreasing = T) , ]
+```
+
+```{r my_tabledvfdfvd1, results='asis' , echo=FALSE}
+print(xtable(summary_QTL_13), type = "html", include.rownames = F , comment=FALSE)
+```
+
+OK so we have a lot of QTL actually!
+
+Save them in supplementary data:
+```{r}
+write.table(summary_QTL_13, file="../../../SUPPORTING_DATA/OR_detail_all_QTLs_metabo.csv", col.names = TRUE, row.names=FALSE, quote=FALSE, sep=";")
+```
+
+How many QTL do we have?
+```{r}
+nrow(summary_QTL_13)
+```
+
+On which chromosomes are these QTLs?
+```{r my_tabledjogt, results='asis' , echo=FALSE}
+a=table(summary_QTL_13$chromo)
+print(xtable(a), type = "html", include.rownames = T , comment=FALSE)
+```
+
+It is quite crazy to see how many QTLs are on the 1B chromosome! (Where we have a good fusariose QTL also)
+
+Let's plot this 1B QTL with only the significant metabolomic variables. Quite impressing! That's a huge QTL, exactly in the same place that the fusariose one.
+
+```{r}
+#Chromosome 1B
+to_plot=summary_QTL_13$carac[summary_QTL_13$chromo=="1B"]
+plot_a_QTL(data, "1B", to_plot, 3.61, 40)
+```
+
+
+
+
+
+
+
+## 2014
+How many metabolomic variable do we have in 2014?
+```{r}
+length(Y14)
+```
+
+Let's summarize in a table every significant QTL for 2014.
+
+```{r, message=FALSE, warning=FALSE}
+summary_QTL_14=summary_table_for_QTL(data, Y14, 3.61, 1.5)
+summary_QTL_14=summary_QTL_14[ order(summary_QTL_14$chromo, summary_QTL_14$LOD_max, decreasing = T) , ]
+```
+
+```{r my_tabledvzw1, results='asis' , echo=FALSE}
+print(xtable(summary_QTL_14), type = "html", include.rownames = F , comment=FALSE)
+```
+
+OK so we have a lot of QTL actually!
+How many QTL do we have?
+```{r}
+nrow(summary_QTL_14)
+```
+
+On which chromosomes are these QTLs?
+```{r my_tarrtt, results='asis' , echo=FALSE}
+a=table(summary_QTL_14$chromo)
+print(xtable(a), type = "html", include.rownames = T , comment=FALSE)
+```
+
+It is quite crazy to see how many QTLs are on the 1B chromosome! (Where we have a good fusariose QTL also)
+
+Let's plot this 1B QTL with only the significant metabolomic variables. Quite impressing! That's a huge QTL, exactly in the same place that the fusariose one.
+
+```{r}
+#Chromosome 1B
+to_plot=summary_QTL_14$carac[summary_QTL_14$chromo=="1B"]
+plot_a_QTL(data, "1B", to_plot, 3.61, 40)
+```
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#5/ Conclusion
+
+Il existe 58 composé phénoliques étudiés. Parmis eux, 23 sont clairement exprimés chez dic2, et 16 sont clairement exprimés chez silur. 
+
+La grande majorité des composés phénoliques (40 en 2013, 38 en 2014) étudiés sont controlés par un QTL ultra majeur sur le chromosome **1B**.  
+IC: entre 2.4 et 12.8 cM.  
+LOD fort, jusqu'à 40.
+Marqueur lié: **Traes_1BS_4073CE3DB@1683**  et  **Traes_1BS_B9CBEFAE5@1271**  
+
+La totalité des composés présent chez Dic2 et pas chez silur sont controlés par le QTL 1B. (23 sur 23 les 2 années).
+Parmis les 16 présent chez Silur, seul 8 (resp. 9) sont controlés par le QTL1B en 2013 (resp. 2014)
+
+Ce QTL colocalise très précisemment avec un QTL majeur détecté dans nos données d'observations de la résistance à la fusariose. Ce QTL a la particularité d'avoir comme allèle apportant la résistance l'allèle de SILUR.
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+

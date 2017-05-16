@@ -1,0 +1,1180 @@
+---
+title: "Creation of Phenotypes Summary file"
+author: "Yan Holtz"
+date: "October 2016"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+  html_document:
+    toc: yes
+  pdf_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 3
+  word_document: default
+---
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+
+#1/ Introduction
+This file is a supplementary data attached with the publication.  
+It describes the analysis of the phenotypic data.
+These data are organized experiment per experiment (distinct files). There are 7 experiments, in different places and year.
+
+This RMD file allows to:  
+- charge every file  
+- compute blup of each individuals  
+- compute heritability for each trait  
+- merge all experiments together  
+- put explicit names to variable  
+--> A summary file is made
+
+
+We need a few libraries
+```{r results='hide', message=FALSE, warning=FALSE}
+library(xtable)
+library(gdata)
+library(lme4)
+library(RColorBrewer)
+my_colors=brewer.pal(8, "Set2") 
+```
+
+Let's upload every file
+```{r}
+# Watch out, to reproduct analysis, you have to update the path.
+my_path="/Users/yan/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/PHENOTYPE"
+setwd(my_path)
+# Cappelles
+CAP13=read.xls("Cappelle_2013_données élaborées.xlsx", sheet = 5, header = TRUE, na.strings="NA") 
+# Grisolles
+GRI11=read.xls("Grisolles_2011_données élaborées.xlsx", sheet = 1, header = TRUE, na.strings="NA") 
+GRI13=read.xls("Grisolles_2013_données élaborées.xlsx", sheet = 3, header = TRUE) 
+GRI15=read.xls("Grisolles_2015_données élaborées.xlsx", sheet = 3, header = TRUE) 
+#Lectoure
+LEC14=read.xls("Lectoure_2014_données élaborées.xlsx", sheet = 3, header = TRUE) 
+# Montbequi
+BEQ11=read.xls("Monbequi_2011_données élaborées.xlsx", sheet = 2, header = TRUE) 
+# Montbartier
+BAR14=read.xls("Montbartier_2014_données élaborées.xlsx", sheet = 2, header = TRUE) 
+# DON
+CAP13_DON=read.xls("DON données élaborées.xlsx", sheet = 1, header = TRUE) 
+GRI13_DON=read.xls("DON données élaborées.xlsx", sheet = 2, header = TRUE) 
+LEC14_DON=read.xls("DON données élaborées.xlsx", sheet = 3, header = TRUE) 
+# All individuals that exist for this pop:
+my_indiv=read.table("all_dic2*Silur.txt", header=F)[,1]
+my_indiv=c("dic2","silur",as.character(my_indiv) )
+```
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#2/ Useful Functions
+
+A function to calculate heritability:
+```{r}
+calculate_herit=function(my_col, my_data){
+  
+  # Combien de rep2?
+  r2=nrow(my_data[ which(my_data$rep==2 & !is.na(my_data[,my_col])), ])
+
+  # si 0, alors je retourne NA pour l'hérit:
+  if(r2==0){ return("NA") ; continue }
+  
+  #Calcul hérit
+  aov<- lmer ( my_data[,my_col] ~ (1|geno)  , data=my_data)
+  VL<-as.numeric(VarCorr(aov)$geno)
+  VRes<-as.numeric(attr(VarCorr(aov),"sc"))^2
+  hdeux=round(VL/(VL + VRes) , 6)
+  return(hdeux)
+}
+```
+
+Same function, but with inoculation date in the model:
+```{r}
+calculate_herit_ino=function(my_col, my_data, my_ino){
+  
+  # Combien de rep2?
+  r2=nrow(my_data[ which(my_data$rep==2 & !is.na(my_data[,my_col])), ])
+
+  # si 0, alors je retourne NA pour l'hérit:
+  if(r2==0){ return("NA") ; continue }
+  
+  #Calcul hérit
+  aov<- lmer ( my_data[,my_col] ~ (1|geno) + my_data[,my_ino]  , data=my_data)
+  VL<-as.numeric(VarCorr(aov)$geno)
+  VRes<-as.numeric(attr(VarCorr(aov),"sc"))^2
+  hdeux=round(VL/(VL + VRes) , 6)
+  return(hdeux)
+}
+```
+
+A function that return BLUPs of individuals. Takes no cofactor
+```{r}
+calculate_blup_nocofactor=function(my_col, my_data){
+  aov<- lmer ( my_data[,my_col] ~ (1|geno)   , data=my_data)
+  blup <- ranef(aov, condVar = TRUE)
+  tmp=data.frame(rownames(blup$geno), blup$geno[,1])
+  colnames(tmp)[2]=paste( colnames(my_data)[my_col], "blup", sep="_")
+  return(tmp)
+  }
+```
+
+A function that return BLUPs of individuals. It **DOES** take innoculation date into account
+```{r}
+calculate_blup=function(my_col, my_ino, my_data){
+  aov<- lmer ( my_data[,my_col] ~ (1|geno) + my_data[,my_ino]  , data=my_data)
+  blup <- ranef(aov, condVar = TRUE)
+  tmp=data.frame(rownames(blup$geno), blup$geno[,1])
+  colnames(tmp)[2]=paste( colnames(my_data)[my_col], "blup", sep="_")
+  return(tmp)
+  }
+```
+
+A function that return BLUPs of individuals. It **DOES** take **innoculation** date AND **height** into account
+```{r}
+calculate_blup_height=function(my_col, my_ino, my_height, my_data){
+  aov<- lmer ( my_data[,my_col] ~ (1|geno) + my_data[,my_ino] + my_data[,my_height]  , data=my_data)
+  blup <- ranef(aov, condVar = TRUE)
+  tmp=data.frame(rownames(blup$geno), blup$geno[,1])
+  colnames(tmp)[2]=paste( colnames(my_data)[my_col], "blup", sep="_")
+  return(tmp)
+  }
+```
+
+A function that return BLUPs of individuals. It **DOES** take  **height** into account **only**
+```{r}
+calculate_blup_heightONLY=function(my_col,  my_height, my_data){
+  aov<- lmer ( my_data[,my_col] ~ (1|geno) + my_data[,my_height]  , data=my_data)
+  blup <- ranef(aov, condVar = TRUE)
+  tmp=data.frame(rownames(blup$geno), blup$geno[,1])
+  colnames(tmp)[2]=paste( colnames(my_data)[my_col], "blup", sep="_")
+  return(tmp)
+  }
+```
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+
+#3/ Cappelle 2013
+Give better column names to the dataset & clean data
+```{r}
+# Rename columns:
+my_names=c("geno", "rep", "CAP13_EPI", "CAP13_FLO", "CAP13_HEI", "CAP13_VER", "CAP13_INO", "CAP13_INO2", "CAP13_PEPI300", "CAP13_PEPI400", "CAP13_PEPI550", "CAP13_PEPIAUDPC", "CAP13_NEPIL300", "CAP13_NEPIL400", "CAP13_NEPIL550", "CAP13_NEPILAUDPC", "CAP13_PEPIL300", "CAP13_PEPIL400", "CAP13_PEPIL550", "CAP13_PEPILAUDPC")
+colnames(CAP13)=my_names
+CAP13$geno=gsub("TT06DC ", "TT06DC.", CAP13$geno)
+# Delete the rep2 of PEPI400, NEPIL400 et PEPIL400 which are wrong
+CAP13$CAP13_PEPI400[CAP13$rep=="2"]=NA
+CAP13$CAP13_NEPIL400[CAP13$rep=="2"]=NA
+CAP13$CAP13_PEPIL400[CAP13$rep=="2"]=NA
+```
+
+
+Let's calculate and print heritabilities (with and without inoc date effect):
+```{r}
+# Calcul héritabilité:
+herit_CAP13=matrix(0,2,ncol(CAP13)-2)
+colnames(herit_CAP13)=my_names[3:length(my_names)]
+num=0
+for(i in c(3:ncol(CAP13))){
+  num=num+1
+  a=calculate_herit(i, CAP13)
+  b=calculate_herit_ino(i, CAP13, 7)
+  herit_CAP13[ ,num]=c(a,b)
+}
+herit_CAP13=apply(herit_CAP13 , 2 , as.numeric)
+```
+
+```{r my_table1, results='asis' , echo=FALSE}
+print(xtable(herit_CAP13), type = "html", include.rownames = F , comment=FALSE)
+```
+
+Change the format of the data: distincts columns for rep1 and rep2 (one line per genotype)
+```{r}
+a=CAP13[CAP13$rep==1 , c(-2)]
+colnames(a)[2:ncol(a)]=paste( my_names[3:length(my_names)], "rep1", sep="_" )
+b=CAP13[CAP13$rep==2 , c(-2)]
+colnames(b)[2:ncol(b)]=paste( my_names[3:length(my_names)], "rep2", sep="_" )
+CAP13_clean=merge(a, b, by.x=1, by.y=1 , all=T)
+CAP13_clean=CAP13_clean[ , -which(colnames(CAP13_clean)%in%c("CAP13_PEPI400_rep2","CAP13_NEPIL400_rep2","CAP13_PEPIL400_rep2"))]
+```
+
+Then we have to calculate the BLUP of every genotype for every variable and add it to the "clean" table :
+```{r}
+for(i in c(3:ncol(CAP13))){
+  
+  # Cas particulier pour  les 400
+  if( i %in% which(colnames(CAP13)%in%c("CAP13_PEPI400","CAP13_NEPIL400","CAP13_PEPIL400"))){ 
+    tmp=aggregate( CAP13[,i], by=list(CAP13[,1]) , mean, na.rm=T) 
+    colnames(tmp)[2]=paste(colnames(CAP13)[i],"_blup",sep="")
+  }else{
+    tmp=calculate_blup_height(i, 7, 5, CAP13)
+  }
+  
+  CAP13_clean=merge(CAP13_clean , tmp, by.x=1, by.y=1, all.x=T)
+  }
+```
+
+
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+
+#4/ Grisolles 2011
+Give better column names to the dataset
+```{r}
+# Rename columns:
+my_names=c("geno", "rep", "GRI11_HEI", "GRI11_EPI", "GRI11_NOT300", "GRI11_NOT350", "GRI11_NOT450", "GRI11_NOT500", "GRI11_NOT550", "GRI11_NOTAUDPC", "GRI11_NEPIL300", "GRI11_NEPIL350", "GRI11_NEPIL450", "GRI11_NEPIL500", "GRI11_NEPIL550", "GRI11_NEPILAUDPC", "GRI11_NANT" )
+colnames(GRI11)=my_names
+GRI11$geno=gsub("TT06DC ", "TT06DC.", GRI11$geno)
+GRI11$geno=gsub("DIC2", "dic2", GRI11$geno)
+GRI11$geno=gsub("Silur", "silur", GRI11$geno)
+```
+
+
+Let's calculate and print heritabilities. No innoculation date provided so heritability is calculated only once.
+```{r}
+# Calcul héritabilité:
+herit_GRI11=matrix(0,1,ncol(GRI11)-2)
+colnames(herit_GRI11)=my_names[3:length(my_names)]
+num=0
+for(i in c(3:ncol(GRI11))){
+  num=num+1
+  a=calculate_herit(i, GRI11) 
+  herit_GRI11[1,num]=a
+  }
+```
+
+```{r my_table2, results='asis' , echo=FALSE}
+print(xtable(herit_GRI11), type = "html", include.rownames = F , comment=FALSE)
+```
+
+To finish, we change the format of the data: distincts columns for rep1 and rep2
+```{r}
+a=GRI11[GRI11$rep==1 , c(-2)]
+colnames(a)[2:ncol(a)]=paste( my_names[3:length(my_names)], "rep1", sep="_" )
+b=GRI11[GRI11$rep==2 , c(-2)]
+colnames(b)[2:ncol(b)]=paste( my_names[3:length(my_names)], "rep2", sep="_" )
+GRI11_clean=merge(a, b, by.x=1, by.y=1 , all=T)
+```
+
+Then we have to calculate the BLUP of every genotype for every variable and add it to the "clean" table.
+Since there is no height provided here, we duplicate the height of rep1
+```{r}
+# Duplicate height of rep1.
+aaa=aggregate(GRI11$GRI11_HEI , by=list(GRI11$geno) , mean, na.rm=T)
+GRI11=merge(GRI11, aaa, by.x=1 , by.y=1, all.x=T)
+GRI11$GRI11_HEI=GRI11$x
+GRI11=GRI11[ , -ncol(GRI11)]
+# Calcultate blup
+for(i in c(4: (ncol(GRI11)-1) )){
+  tmp=calculate_blup_heightONLY(i, 3, GRI11)
+  GRI11_clean=merge(GRI11_clean , tmp, by.x=1, by.y=1, all.x=T)
+  }
+```
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+
+#5/ Grisolles 2013
+Give better column names to the dataset
+```{r}
+# Rename columns:
+GRI13=GRI13[,c(-2,-12)]
+my_names=c("geno", "rep", "GRI13_EPI", "GRI13_FLO", "GRI13_HEI", "GRI13_INO", "GRI13_PEPI350", "GRI13_PEPI450", "GRI13_PEPI550", "GRI13_PEPIAUDPC", "GRI13_NEPIL350", "GRI13_NEPIL450", "GRI13_NEPIL550", "GRI13_NEPILAUDPC", "GRI13_PEPIL350","GRI13_PEPIL450","GRI13_PEPIL550","GRI13_PEPILAUDPC",   "GRI13_NOT350", "GRI13_NOT450", "GRI13_NOT550", "GRI13_NOTAUDPC")
+colnames(GRI13)=my_names
+GRI13$geno=gsub("TT06DC ", "TT06DC.", GRI13$geno)
+```
+
+
+Let's calculate and print heritabilities:
+```{r}
+# Calcul héritabilité:
+herit_GRI13=matrix(0,2,ncol(GRI13)-2)
+colnames(herit_GRI13)=my_names[3:length(my_names)]
+num=0
+for(i in c(3:ncol(GRI13))){
+  num=num+1
+  a=calculate_herit(i, GRI13) 
+  b=calculate_herit_ino(i, GRI13, 6)
+  herit_GRI13[ ,num]=c(a,b)
+  }
+```
+
+```{r my_table3, results='asis' , echo=FALSE}
+print(xtable(herit_GRI13), type = "html", include.rownames = F , comment=FALSE)
+```
+
+To finish, we change the format of the data: distincts columns for rep1 and rep2
+```{r}
+a=GRI13[GRI13$rep==1 , c(-2)]
+colnames(a)[2:ncol(a)]=paste( my_names[3:length(my_names)], "rep1", sep="_" )
+b=GRI13[GRI13$rep==2 , c(-2)]
+colnames(b)[2:ncol(b)]=paste( my_names[3:length(my_names)], "rep2", sep="_" )
+GRI13_clean=merge(a, b, by.x=1, by.y=1 , all=T)
+```
+
+Then we have to calculate the BLUP of every genotype for every variable and add it to the "clean" table :
+```{r}
+for(i in c(3:ncol(GRI13))){
+  tmp=calculate_blup_height(i, 6, 5, GRI13)
+  GRI13_clean=merge(GRI13_clean , tmp, by.x=1, by.y=1, all.x=T)
+  }
+```
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+
+#6/ Grisolles 2015
+Give better column names to the dataset
+```{r}
+# Rename columns:
+my_names=c("geno", "rep", "GRI15_EPI", "GRI15_HEI", "GRI15_INO", "GRI15_NOT350", "GRI15_NOT550", "GRI15_NOTAUDPC", "GRI15_PEPI350", "GRI15_PEPI550", "GRI15_PEPIAUDPC", "GRI15_NEPIL350", "GRI15_NEPIL550", "GRI15_NEPILAUDPC", "GRI15_PEPIL350", "GRI15_PEPIL550", "GRI15_PEPILAUDPC" )
+colnames(GRI15)=my_names
+GRI15$geno=gsub("TT06DC ", "TT06DC.", GRI15$geno)
+GRI15$geno=gsub(" L3", "", GRI15$geno)
+GRI15$geno=gsub(" L2", "", GRI15$geno)
+
+```
+
+Let's calculate and print heritabilities:
+```{r}
+# Calcul héritabilité:
+herit_GRI15=matrix(0,2,ncol(GRI15)-3)
+colnames(herit_GRI15)=my_names[c(3,4,6:length(my_names))]
+num=0
+for(i in c(3,4,6:length(my_names))){
+  num=num+1
+  a=calculate_herit(i, GRI15) 
+  b=calculate_herit_ino(i, GRI15, 5)
+  herit_GRI15[ ,num]=c(a,b)
+  }
+```
+
+
+```{r my_table4, results='asis' , echo=FALSE}
+print(xtable(herit_GRI15), type = "html", include.rownames = F , comment=FALSE)
+```
+
+To finish, we change the format of the data: distincts columns for rep1 and rep2
+```{r}
+a=GRI15[GRI15$rep==1 , c(-2)]
+colnames(a)[2:ncol(a)]=paste( my_names[3:length(my_names)], "rep1", sep="_" )
+b=GRI15[GRI15$rep==2 , c(-2)]
+colnames(b)[2:ncol(b)]=paste( my_names[3:length(my_names)], "rep2", sep="_" )
+GRI15_clean=merge(a, b, by.x=1, by.y=1 , all=T)
+```
+
+Then we have to calculate the BLUP of every genotype for every variable and add it to the "clean" table :
+```{r}
+for(i in c(3,4,6:length(my_names)) ){
+  tmp=calculate_blup_height(i, 5, 4, GRI15)
+  GRI15_clean=merge(GRI15_clean , tmp, by.x=1, by.y=1, all.x=T)
+  }
+```
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+
+#7/ Lectoure 2014
+Give better column names to the dataset
+```{r}
+# Rename columns:
+my_names=c("geno", "rep", "LEC14_EPI", "LEC14_HEI", "LEC14_EXT", "LEC14_INO", "LEC14_PEPI300", "LEC14_PEPI400", "LEC14_PEPI550", "LEC14_PEPIAUDPC", "LEC14_NEPIL300", "LEC14_NEPIL400", "LEC14_NEPIL550", "LEC14_NEPILAUDPC", "LEC14_PEPIL300", "LEC14_PEPIL400", "LEC14_PEPIL550", "LEC14_PEPILAUDPC" )
+colnames(LEC14)=my_names
+LEC14$geno=gsub("TT06DC ", "TT06DC.", LEC14$geno)
+LEC14$geno=gsub(" L3", "", LEC14$geno)
+LEC14$geno=gsub(" L2", "", LEC14$geno)
+LEC14$geno=gsub("Silur", "silur", LEC14$geno)
+# Delete weird individuals
+LEC14=LEC14[-which(LEC14$geno=="TT06DC.40.45" | LEC14$geno=="TT06DC.42.12" | LEC14$geno=="TT06DC.42.14" | LEC14$geno=="TT06DC.44.62" | LEC14$geno=="TT06DC.44.64")  , ]
+
+```
+
+
+Let's calculate and print heritabilities:
+```{r}
+# Calcul héritabilité:
+herit_LEC14=matrix(0,2,ncol(LEC14)-3)
+colnames(herit_LEC14)=my_names[c(3,5:length(my_names))]
+num=0
+for(i in c(3,5:ncol(LEC14))){
+  num=num+1
+  a=calculate_herit(i, LEC14) 
+  b=calculate_herit_ino(i, LEC14, 6)
+  herit_LEC14[ ,num]=c(a,b)
+  }
+```
+
+
+```{r my_table5, results='asis' , echo=FALSE}
+print(xtable(herit_LEC14), type = "html", include.rownames = F , comment=FALSE)
+```
+
+To finish, we change the format of the data: distincts columns for rep1 and rep2
+```{r}
+a=LEC14[LEC14$rep==1 , c(-2)]
+colnames(a)[2:ncol(a)]=paste( my_names[3:length(my_names)], "rep1", sep="_" )
+b=LEC14[LEC14$rep==2 , c(-2)]
+colnames(b)[2:ncol(b)]=paste( my_names[3:length(my_names)], "rep2", sep="_" )
+LEC14_clean=merge(a, b, by.x=1, by.y=1 , all=T)
+```
+
+Then we have to calculate the BLUP of every genotype for every variable and add it to the "clean" table :
+Oui duplicate the height since there is only one rep.
+
+```{r}
+# Duplicate height of rep1.
+aaa=aggregate(LEC14$LEC14_HEI , by=list(LEC14$geno) , mean, na.rm=T)
+LEC14=merge(LEC14, aaa, by.x=1 , by.y=1, all.x=T)
+LEC14$LEC14_HEI=LEC14$x
+LEC14=LEC14[ , -ncol(LEC14)]
+# Calculate blup
+for(i in c(3,5:length(my_names))  ){
+  print(i)
+  tmp=calculate_blup_height(i, 6, 4,  LEC14)
+  LEC14_clean=merge(LEC14_clean , tmp, by.x=1, by.y=1, all.x=T)
+  }
+```
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#8/ Montbequi 2011
+
+Give better column names to the dataset
+```{r}
+# Rename columns:
+my_names=c("geno", "rep", "BEQ11_FLO",  "BEQ11_HEI", "BEQ11_LCE", "BEQ11_COM", "BEQ11_PEPI350", "BEQ11_PEPI450", "BEQ11_PEPIAUDPC", "BEQ11_NOT300", "BEQ11_NOT350", "BEQ11_NOT450", "BEQ11_NOT500", "BEQ11_NOTAUDPC", "BEQ11_NEPIL300", "BEQ11_NEPIL350", "BEQ11_NEPIL450", "BEQ11_NEPIL500", "BEQ11_NEPILAUDPC" )
+colnames(BEQ11)=my_names
+BEQ11$geno=gsub("TT06DC ", "TT06DC.", BEQ11$geno)
+
+```
+
+No heritability since there is *NO repetition*
+No innoculation date effect since it is not provided
+To finish, we change the format of the data: just aggregate data for dic2 and silur. Other are all right since there is no rep.
+Il faudrait faire un modele pour prendre en compte la hauteur quand même!
+```{r}
+#Pas propre
+BEQ11=aggregate( cbind(BEQ11_FLO, BEQ11_HEI, BEQ11_LCE, BEQ11_COM, BEQ11_PEPI350, BEQ11_PEPI450, BEQ11_PEPIAUDPC, BEQ11_NOT300, BEQ11_NOT350, BEQ11_NOT450, BEQ11_NOT500, BEQ11_NOTAUDPC, BEQ11_NEPIL300, BEQ11_NEPIL350, BEQ11_NEPIL450, BEQ11_NEPIL500, BEQ11_NEPILAUDPC) ~ geno, data=BEQ11, mean)
+BEQ11_clean=BEQ11
+```
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+
+#9/ Montbartier 2014
+
+Give better column names to the dataset
+```{r}
+# Rename columns:
+my_names=c("geno", "rep", "BAR14_EPI",  "BAR14_ROUY", "BAR14_NOT600", "BAR14_INO", "BAR14_INO2", "BAR14_INO3", "BAR14_NEPIL", "BAR14_EXT", "BAR14_PEPI350", "BAR14_PEPI400", "BAR14_PEPI550", "BAR14_PEPI600", "BAR14_PEPIAUDPC", "BAR14_NEPIL300", "BAR14_NEPIL400", "BAR14_NEPIL550", "BAR14_NEPIL600", "BAR14_NEPILAUDPC", "BAR14_PEPIL300", "BAR14_PEPIL400", "BAR14_PEPIL550", "BAR14_PEPIL600", "BAR14_PEPILAUDPC")
+colnames(BAR14)=my_names
+BAR14$geno=gsub("TT06DC ", "TT06DC.", BAR14$geno)
+BAR14$geno=gsub(" L3", "", BAR14$geno)
+BAR14$geno=gsub(" L2", "", BAR14$geno)
+BAR14$geno=gsub("SILUR", "silur", BAR14$geno)
+BAR14$geno=gsub("Dic 2", "dic2", BAR14$geno)
+```
+
+Let's calculate and print heritabilities:
+```{r}
+# Calcul héritabilité:
+herit_BAR14=matrix(0,2,ncol(BAR14)-5)
+colnames(herit_BAR14)=my_names[c(3,4,5,9:length(my_names))]
+num=0
+for(i in c(3,4,5,9:ncol(BAR14))){
+  num=num+1
+  a=calculate_herit(i, BAR14) 
+  b=calculate_herit_ino(i, BAR14, 6)
+  herit_BAR14[ ,num]=c(a,b)
+  }
+```
+
+
+```{r my_table1115, results='asis' , echo=FALSE}
+print(xtable(herit_BAR14), type = "html", include.rownames = F , comment=FALSE)
+```
+
+
+To finish, we change the format of the data: distincts columns for rep1 and rep2
+```{r}
+a=BAR14[BAR14$rep==1 , c(-2)]
+colnames(a)[2:ncol(a)]=paste( my_names[3:length(my_names)], "rep1", sep="_" )
+b=BAR14[BAR14$rep==2 , c(-2)]
+colnames(b)[2:ncol(b)]=paste( my_names[3:length(my_names)], "rep2", sep="_" )
+BAR14_clean=merge(a, b, by.x=1, by.y=1 , all=T)
+```
+
+Then we have to calculate the BLUP of every genotype for every variable and add it to the "clean" table.
+
+Since the heigt is not provided, I can put the height of CAP13.
+
+```{r}
+# Add average height of CAP13.
+my_height=aggregate(CAP13$CAP13_HEI , by=list(CAP13$geno), mean)
+colnames(my_height)=c("geno","height")
+BAR14=merge(BAR14, my_height, by.x=1, by.y=1 , all.x=T)
+
+# Calculate blups
+for(i in c(3,4,5,9:length(my_names))  ){
+  tmp=calculate_blup_height(i, 6, 26, BAR14)
+  BAR14_clean=merge(BAR14_clean , tmp, by.x=1, by.y=1, all.x=T)
+  }
+```
+
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+
+#10/ DON
+
+## Cappelle 2013
+```{r}
+# Clean data
+# geno "TT06DC.38.34" hand-made changed to rep1 and rep2
+CAP13_DON=CAP13_DON[,3:5]
+colnames(CAP13_DON)=c("geno", "rep", "CAP13_DON")
+CAP13_DON$rep[CAP13_DON$rep=="RepM"]="Rep1"
+CAP13_DON$geno=gsub("TT06DC ", "TT06DC.", CAP13_DON$geno)
+CAP13_DON$geno=gsub("Silur", "silur", CAP13_DON$geno)
+CAP13_DON$rep=gsub("Rep", "", CAP13_DON$rep)
+# On enleve 2 individus douteux: 
+CAP13_DON=CAP13_DON[-which(CAP13_DON$geno=="TT06DC.44.24" | CAP13_DON$geno=="TT06DC.42.36") ,]
+
+
+# Heritability
+a=calculate_herit(3, CAP13_DON) 
+herit_CAP13=cbind(herit_CAP13,data.frame(CAP13_DON=c(a,"NA")))
+
+# each rep in a column
+a=CAP13_DON[CAP13_DON$rep==1 , c(-2)]
+b=CAP13_DON[CAP13_DON$rep==2 , c(-2)]
+CAP13_DON_clean=merge(a, b, by.x=1, by.y=1 , all=T)
+colnames(CAP13_DON_clean)=c("geno","CAP13_DON_rep1", "CAP13_DON_rep2")
+
+# add blups
+# I did a first try using the height in the model. It was quite disapoiting. So let's try taking into acount the % of spikelet with fusariose.
+CAP13_DON=merge(CAP13_DON, CAP13[,c("geno","rep","CAP13_PEPIL550")], by.x=c(1,2), by.y=c(1,2) , all.x=T)
+# calculate blup
+aov<- lmer ( CAP13_DON ~ (1|geno) + CAP13_PEPIL550 , data=CAP13_DON)
+blup <- ranef(aov, condVar = TRUE)
+tmp=data.frame(geno=rownames(blup$geno), CAP13_DON_blup=blup$geno[,1])
+CAP13_DON_clean=merge(CAP13_DON_clean, tmp, by.x=1, by.y=1, all.x=T)
+```
+
+
+
+## Grisolles 2013
+```{r}
+# Clean data
+GRI13_DON=GRI13_DON[,3:5]
+colnames(GRI13_DON)=c("geno", "rep", "GRI13_DON")
+GRI13_DON$rep[GRI13_DON$rep=="RepM"]="Rep1"
+GRI13_DON$geno=gsub("TT06DC ", "TT06DC.", GRI13_DON$geno)
+GRI13_DON$geno=gsub("Silur", "silur", GRI13_DON$geno)
+GRI13_DON$rep=gsub("Rep", "", GRI13_DON$rep)
+# On enleve une donnée indiqué comme louche
+GRI13_DON=GRI13_DON[-which(GRI13_DON$geno=="TT06DC.38.53" & GRI13_DON$GRI13_DON==706),]
+# On enleve 4 individus pourris
+GRI13_DON=GRI13_DON[-which(GRI13_DON$geno=="TT06DC.39.21" | GRI13_DON$geno=="TT06DC.39.24" | GRI13_DON$geno=="TT06DC.38.50" | GRI13_DON$geno=="TT06DC.42.44") ,]
+
+
+# Heritability
+a=calculate_herit(3, GRI13_DON) 
+herit_GRI13=cbind(herit_GRI13,data.frame(GRI13_DON=c(a,"NA")))
+
+# each rep in a column
+a=GRI13_DON[GRI13_DON$rep==1 , c(-2)]
+b=GRI13_DON[GRI13_DON$rep==2 , c(-2)]
+GRI13_DON_clean=merge(a, b, by.x=1, by.y=1 , all=T)
+colnames(GRI13_DON_clean)=c("geno","GRI13_DON_rep1", "GRI13_DON_rep2")
+
+# add blups
+# We use the PEPIL 550 to better estimate the blups?
+GRI13_DON=merge(GRI13_DON, GRI13[ , c("geno","rep","GRI13_PEPIL550")], by.x=c(1,2), by.y=c(1,2) , all.x=T)
+# calculate blup
+aov<- lmer ( GRI13_DON ~ (1|geno) +  GRI13_PEPIL550 , data=GRI13_DON)
+blup <- ranef(aov, condVar = TRUE)
+tmp=data.frame(geno=rownames(blup$geno), GRI13_DON_blup=blup$geno[,1])
+GRI13_DON_clean=merge(GRI13_DON_clean, tmp, by.x=1, by.y=1, all.x=T)
+```
+
+
+## Lectoure 2014
+Il faut juste moyenner les valeurs pour Dic2 et Silur.
+Il n'y a pas de rep concernant DON pour cette expé, meme si il y avait des rep au champ!
+```{r}
+# Clean data
+LEC14_DON=aggregate(LEC14_DON$DON, by=list(geno=as.factor(LEC14_DON$geno)) , mean)
+colnames(LEC14_DON)=c("geno", "LEC14_DON")
+LEC14_DON$geno=gsub("TT06DC ", "TT06DC.", LEC14_DON$geno)
+LEC14_DON$geno=gsub("Dic2", "dic2", LEC14_DON$geno)
+LEC14_DON$geno=gsub("Silur", "silur", LEC14_DON$geno)
+LEC14_DON_clean=LEC14_DON
+
+```
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+
+#11/ Heritability
+Let's show the heritability of every trait of this study. Several barplots are presented. From top to bottom: Cappelle, Grisolles 2011, 2013 and 2015, Lectoure, Montbartier. From left to right: Agronomical features, Resistance of type 1, resistance of type 2.
+
+## Graphic representation
+```{r, fig.height=9}
+# Start barplot
+par(mfrow=c(6,3))
+par(mar=c(1,2,1,0))
+
+# Cappelles 2013
+dat=as.data.frame(herit_CAP13)
+colnames(dat)=gsub("CAP13_","", colnames(dat))
+a=as.matrix( dat[1,c("EPI","FLO","HEI","VER")] )
+barplot(a, xlab="", col="grey", cex.names=0.7, las=2, ylim=c(0,1), ylab="CAPPELLE 2013" )
+b=as.matrix( dat[1,c("PEPI300","PEPI400","PEPI550","PEPIAUDPC")] )
+barplot(b, xlab="", col="grey", cex.names=0.7, las=2, ylim=c(0,1) )
+c=as.matrix( dat[1,c("NEPIL300","NEPIL400","NEPIL550","NEPILAUDPC","PEPIL300","PEPIL400","PEPIL550","PEPILAUDPC")] )
+barplot(c, xlab="", col="grey", cex.names=0.7, las=2, ylim=c(0,1) )
+
+# Grisolles 2011
+dat=as.data.frame(herit_GRI11)
+colnames(dat)=gsub("GRI11_","", colnames(dat))
+a=as.matrix( dat[1,c("EPI","HEI")] )
+barplot(a, xlab="", col="grey", cex.names=0.7, las=2, ylim=c(0,1), ylab="GRISOLLES 2011" )
+b=as.matrix( dat[1,c("NOT300","NOT350","NOT450","NOT500","NOT550","NOTAUDPC")] )
+barplot(b, xlab="", col="grey", cex.names=0.7, las=2, ylim=c(0,1) )
+c=as.matrix( dat[1,c("NEPIL300","NEPIL350","NEPIL450","NEPIL500","NEPIL550","NEPILAUDPC")] )
+barplot(c, xlab="", col="grey", cex.names=0.7, las=2, ylim=c(0,1) )
+
+# Grisolles 2013
+dat=as.data.frame(herit_GRI13)
+colnames(dat)=gsub("GRI13_","", colnames(dat))
+a=as.matrix( dat[1,c("EPI","FLO","HEI")] )
+barplot(a, xlab="", col="grey", cex.names=0.7, las=2, ylim=c(0,1), ylab="GRISOLLES 2013" )
+b=as.matrix( dat[1,c("PEPI350","PEPI450","PEPI550","PEPIAUDPC","NOT350", "NOT450", "NOT550", "NOTAUDPC")] )
+barplot(b, xlab="", col="grey", cex.names=0.7, las=2, ylim=c(0,1) )
+c=as.matrix( dat[1,c("NEPIL350","NEPIL450","NEPIL550","NEPILAUDPC","PEPIL350","PEPIL450","PEPIL550","PEPILAUDPC")] )
+barplot(c, xlab="", col="grey", cex.names=0.7, las=2, ylim=c(0,1) )
+
+# Grisolles 2015
+dat=as.data.frame(herit_GRI15)
+colnames(dat)=gsub("GRI15_","", colnames(dat))
+a=as.matrix( dat[1,c("EPI","HEI")] )
+barplot(a, xlab="", col="grey", cex.names=0.7, las=2, ylim=c(0,1) , ylab="GRISOLLES 2015")
+b=as.matrix( dat[1,c("NOT350","NOT550","NOTAUDPC","PEPI350","PEPI550", "PEPIAUDPC")] )
+barplot(b, xlab="", col="grey", cex.names=0.7, las=2, ylim=c(0,1) )
+c=as.matrix( dat[1,c("NEPIL350","NEPIL550","NEPILAUDPC","PEPIL350","PEPIL550","PEPILAUDPC")] )
+barplot(c, xlab="", col="grey", cex.names=0.7, las=2, ylim=c(0,1) )
+
+# Lectoure 2014
+dat=as.data.frame(herit_LEC14)
+colnames(dat)=gsub("LEC14_","", colnames(dat))
+a=as.matrix( dat[1,c("EPI","EXT")] )
+barplot(a, xlab="", col="grey", cex.names=0.7, las=2, ylim=c(0,1) , ylab="LECTOURE 2014")
+b=as.matrix( dat[1,c("PEPI300","PEPI400","PEPI550","PEPIAUDPC")] )
+barplot(b, xlab="", col="grey", cex.names=0.7, las=2, ylim=c(0,1) )
+c=as.matrix( dat[1,c("NEPIL300","NEPIL400", "NEPIL550","NEPILAUDPC","PEPIL300","PEPIL400","PEPIL550","PEPILAUDPC")] )
+barplot(c, xlab="", col="grey", cex.names=0.7, las=2, ylim=c(0,1) )
+
+# Pas de rep pour Montbequi
+
+# Montbartier 14
+dat=as.data.frame(herit_BAR14)
+colnames(dat)=gsub("BAR14_","", colnames(dat))
+a=as.matrix( dat[1,c("EPI","ROUY","EXT")] )
+barplot(a, xlab="", col="grey", cex.names=0.7, las=2, ylim=c(0,1) , ylab="LECTOURE 2014")
+b=as.matrix( dat[1,c("NOT600", "PEPI350","PEPI400","PEPI550","PEPI600","PEPIAUDPC")] )
+barplot(b, xlab="", col="grey", cex.names=0.7, las=2, ylim=c(0,1) )
+c=as.matrix( dat[1,c("NEPIL300","NEPIL400", "NEPIL550","NEPIL600","NEPILAUDPC","PEPIL300","PEPIL400","PEPIL600","PEPILAUDPC")] )
+barplot(c, xlab="", col="grey", cex.names=0.7, las=2, ylim=c(0,1) )
+
+```
+
+
+
+## Rough values
+*Cappelles 2013*
+```{r my_table6, results='asis' , echo=FALSE}
+print(xtable(herit_CAP13), type = "html", include.rownames = F , comment=FALSE)
+```
+
+*Grisolles 2011*
+```{r my_table7, results='asis' , echo=FALSE}
+print(xtable(herit_GRI11), type = "html", include.rownames = F , comment=FALSE)
+```
+
+*Grisolles 2013*
+```{r my_table8, results='asis' , echo=FALSE}
+print(xtable(herit_GRI13), type = "html", include.rownames = F , comment=FALSE)
+```
+
+*Grisolles 2015*
+```{r my_tablell8, results='asis' , echo=FALSE}
+print(xtable(herit_GRI15), type = "html", include.rownames = F , comment=FALSE)
+```
+
+*Lectoure 2014*
+```{r my_table9, results='asis' , echo=FALSE}
+print(xtable(herit_LEC14), type = "html", include.rownames = F , comment=FALSE)
+```
+
+*Montbequi 2011*
+Pas de rep?
+
+*Montbartier 2014*
+```{r my_table10, results='asis' , echo=FALSE}
+print(xtable(herit_BAR14), type = "html", include.rownames = F , comment=FALSE)
+```
+
+
+## Effect of Innoculation date
+Using innoculation date always gives lower heritability... 
+```{r}
+# Show
+par(mfrow=c(2,3), mar=c(8,2,2,2))
+my_list=list(herit_CAP13[,c(1:18)], herit_GRI13[,-21] , herit_GRI15, herit_LEC14, herit_BAR14)
+lapply(my_list, function(x){ barplot(as.matrix(x),beside=T, las=2, col=my_colors[c(1,2)] )}  )
+```
+
+## Conclusion
+- Flowering time & Height have really good heritability --> we can trust our experimental design.--
+- **BUT** Grisolles 2011: low heritability for every trait --> no trust --> We have to remove this field for further analysis.--
+- AUDPC and last notation are always the best option.--
+- Heritability are medium ~0.5.--
+- Taking into account the innoculation date has low effect on te heritability, except fro Cappelle 2013. (Except for flowering data, what is logical)
+- DON has a low heritability (~0.25 only...)
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+#12/ Output phenotype table
+Now we need to merge all these data together for further study (QTL)
+
+```{r}
+
+# Concatenate every file
+FINAL=my_indiv
+for(i in list(CAP13_clean, CAP13_DON_clean, GRI11_clean, GRI13_clean, GRI13_DON_clean, GRI15_clean, LEC14_clean, LEC14_DON_clean, BEQ11_clean, BAR14_clean)){
+  #print(head(colnames(i)))
+  FINAL=merge(FINAL, i, by.x=1, by.y=1, all.x=T)
+   }
+colnames(FINAL)[1]="geno"
+
+# I remove the variable concerning innoculation date:
+FINAL=FINAL[ , -grep( "INO", colnames(FINAL) ) ]
+
+write.table(FINAL, file="/Users/yan/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/PHENOTYPE/phenotypage_all_fusa.csv", quote=F, row.names=F, col.names=T, sep=";")
+```
+
+Nombre de variable final??
+```{r}
+dim(FINAL)
+```
+J'ai bien les 0 dans les noms?
+```{r}
+#FINAL$geno
+```
+
+Duplicated genotyped?
+```{r}
+table(FINAL$geno)[table(FINAL$geno)>1]
+```
+[//]: =========================================================================================================================
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#13/ Feature of experiments
+Let's summarize the feature of each experiment in a table:
+
+```{r}
+# start table
+bilan=data.frame( matrix(0,8,7) )
+colnames(bilan)=c("CAP13", "GRI11", "GRI13", "GRI15", "LEC14", "BEQ11","BAR14")
+rownames(bilan)=c("# obs", "# rep", "# geno", "DON?", "PEPI?", "NOT?", "NEPIL?", "PEPIL?")
+all=list(CAP13, GRI11, GRI13, GRI15, LEC14, BEQ11, BAR14)
+all_clean=list(CAP13_clean, GRI11_clean, GRI13_clean, GRI15_clean, LEC14_clean, BEQ11_clean, BAR14_clean)
+
+# Number of obs per exp?
+bilan[1,]=unlist(lapply(all, nrow ))
+# Number of ind rep:
+bilan[2,]=unlist(lapply(all, function(x){nrow(x[x$rep==2, ])} ))
+# Number of genotypes
+bilan[3,]=unlist(lapply(all_clean, nrow) )
+# Don available?
+bilan[4,]=c("Yes","-","Yes","-","Yes","-","-")
+# PEPI avail
+bilan[5,]=c("Yes","-","Yes","Yes","Yes","Yes","Yes")
+# NOT avail
+bilan[6,]=c("-","Yes","Yes","Yes","-","Yes","Yes")
+# NEPIL
+bilan[7,]=c("Yes","Yes","Yes","Yes","Yes","Yes","Yes")
+# PEPIL
+bilan[8,]=c("Yes","-","Yes","Yes","Yes","-","Yes")
+```
+
+```{r my_table111ee5, results='asis' , echo=FALSE}
+print(xtable(bilan), type = "html", include.rownames = T , comment=TRUE)
+```
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#14/ Effect of innoculation date?
+
+##Cappelle 2013
+Pour Cappelle, on observe un léger effet (plus de maladie lorsque l'Inoc à lieu tot). Mais cette effet n'est pas signif.
+```{r}
+# show
+par(mfrow=c(1,3), mar=c(5,4,2,2))
+boxplot( CAP13$CAP13_PEPIAUDPC ~ CAP13$CAP13_INO, ylab="PEPI (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( CAP13$CAP13_PEPILAUDPC ~ CAP13$CAP13_INO, ylab="PEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( CAP13$CAP13_NEPILAUDPC ~ CAP13$CAP13_INO, ylab="NEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+# Check if the innoculation date has an effect on the disease observation. I return the pvalues of the anova test for the innoculation effect. If < 0.05, we have a significant effect.
+for(i in c(9:ncol(CAP13))){
+  model=lm( CAP13[,i] ~ geno + CAP13_INO , data=CAP13)
+  a=anova(model)[2,5]
+  model2=lm( CAP13[,i] ~ geno + CAP13_INO2 , data=CAP13)
+  a=anova(model)[2,5]
+  b=anova(model2)[2,5]
+  print(paste(colnames(CAP13)[i], a, b,sep="  -  "))
+}
+
+```
+
+## Grisolles 2011
+Pas de données des dates d'Inoc
+
+## Grisolles 2013
+One more time, samples that are innoculated earlier show more symptoms. The difference is significant.
+```{r}
+# show
+par(mfrow=c(1,4), mar=c(5,4,2,2))
+boxplot( GRI13$GRI13_PEPIAUDPC ~ GRI13$GRI13_INO, ylab="PEPI (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( GRI13$GRI13_PEPILAUDPC ~ GRI13$GRI13_INO, ylab="PEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( GRI13$GRI13_NEPILAUDPC ~ GRI13$GRI13_INO, ylab="NEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( GRI13$GRI13_NOTAUDPC ~ GRI13$GRI13_INO, ylab="NOT (AUDPC)", xlab="Innoculation date", col=my_colors)
+# Check if the innoculation date has an effect on the disease observation. I return the pvalues of the anova test for the innoculation effect. If < 0.05, we have a significant effect.
+for(i in c(8:ncol(GRI13))){
+  model=lm( GRI13[,i] ~ geno + GRI13_INO , data=GRI13)
+  a=anova(model)[2,5]
+  print(paste(colnames(GRI13)[i],a, sep=" : "))
+}
+```
+
+## Grisolles 2015
+Hard to interpret. There is a significant difference between innoculation date. But it is not ordered. May be the date 1-->6 are not in the good order?
+
+```{r}
+# show
+par(mfrow=c(1,3), mar=c(5,4,2,2))
+boxplot( GRI15$GRI15_PEPILAUDPC ~ GRI15$GRI15_INO, ylab="PEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( GRI15$GRI15_NEPILAUDPC ~ GRI15$GRI15_INO, ylab="NEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( GRI15$GRI15_NOTAUDPC ~ GRI15$GRI15_INO, ylab="NOT (AUDPC)", xlab="Innoculation date", col=my_colors)
+# Significant?
+for(i in c(5:ncol(GRI15))){
+  model=lm( GRI15[,i] ~ geno + GRI15_INO , data=GRI15)
+  a=anova(model)[2,5]
+  print(paste(colnames(GRI15)[i],a, sep=" : "))
+}
+```
+
+## Lectoure 2014
+Visually, a strong effect as usual (later inoc=less disease). But not significant...
+
+```{r}
+# show
+par(mfrow=c(1,3), mar=c(5,4,2,2))
+boxplot( LEC14$LEC14_PEPILAUDPC ~ LEC14$LEC14_INO, ylab="PEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( LEC14$LEC14_NEPILAUDPC ~ LEC14$LEC14_INO, ylab="NEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( LEC14$LEC14_PEPIAUDPC ~ LEC14$LEC14_INO, ylab="PEPI (AUDPC)", xlab="Innoculation date", col=my_colors)
+# Significant?
+for(i in c(7:ncol(LEC14))){
+  model=lm( LEC14[,i] ~ geno + LEC14_INO , data=LEC14)
+  a=anova(model)[2,5]
+  print(paste(colnames(LEC14)[i],a, sep=" : "))
+}
+```
+
+## Montbequi 2011
+No innoculation date provided.
+
+## Montbartier 2014
+
+```{r}
+# show
+par(mfrow=c(1,3), mar=c(5,4,2,2))
+boxplot( BAR14$BAR14_PEPILAUDPC ~ BAR14$BAR14_INO, ylab="PEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( BAR14$BAR14_NEPILAUDPC ~ BAR14$BAR14_INO, ylab="NEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( BAR14$BAR14_PEPILAUDPC ~ BAR14$BAR14_INO, ylab="PEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+# Significant?
+for(i in c(11:ncol(BAR14))){
+  model=lm( BAR14[,i] ~ geno + as.factor(BAR14_INO) , data=BAR14)
+  a=anova(model)[2,5]
+  print(paste(colnames(BAR14)[i],a, sep=" : "))
+}
+```
+
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#15/ Effect of height in blup?
+
+On calcule les blups avec et sans effet de la hauteur:
+```{r}
+NOCOF=calculate_blup_nocofactor(11, CAP13)
+SANS=calculate_blup(11, 7, CAP13)
+AVEC=calculate_blup_height(11, 7, 5, CAP13)
+```
+
+Distribution de la variable et des blups :
+```{r}
+par(mfrow=c(1,3))
+hist(CAP13[,11] , col=rgb(0.1,0.8,0.1,0.4) , xlab="Original value of CAP13_PEPI550" , breaks=20, main="")
+hist(SANS[,2] , col=rgb(0.3,0.8,0.6,0.4) , xlab="Blup without height" , breaks=20, main="")
+hist(AVEC[,2] , col=rgb(0.1,0.4,0.6,0.4) , xlab="Blup with height" , breaks=20, main="")
+```
+
+On voit que la variable de base n'est pas du tout normale. Lorsque l'on passe au BLUP, la variable devient quasi-normale et répartie de -20 à 20 ou -40 à 40, ce qui est beaucoup plus classique.
+
+Plot de la relation entre note de base (rep1) et blup?
+```{r}
+AA=merge(CAP13[ which(CAP13$rep==1) ,c(1,11)]  , SANS, by.x=1, by.y=1, all.x=T  )
+AA=merge(AA, AVEC, by.x=1, by.y=1, all.x=T)
+par(mfrow=c(1,2))
+plot(AA[ ,2] , AA[,3] , pch=20 , col=rgb(0.3,0.2,0.6,0.4) , xlab="Original value of CAP13_PEPI550", ylab="Blup without height" , cex=1.3)
+plot(AA[ ,2] , AA[,4] , pch=20 , col=rgb(0.3,0.2,0.6,0.4) , xlab="Original value of CAP13_PEPI550", ylab="Blup without height" , cex=1.3)
+```
+
+
+Plot de la relation entre les 2:
+```{r}
+par(mfrow=c(1,1))
+plot(SANS[,2] , AVEC[,2] , pch=20 , col=rgb(0.3,0.2,0.6,0.4) , xlab="Blup without height", ylab="Blup without height" , cex=1.3)
+cor(SANS[,2] , AVEC[,2])
+```
+On a une très bonne corrélation entre les 2 blups, ce qui est plutôt rassurant. Reste à voir si les variations nous paraissent logiques.
+
+On rappelle que les plantes **hautes** sont censées être plus **résistante**.
+Essayons de trouver une plante très grande et une très petite, avec la même note de PEPI550.
+
+Le génotype 42.26 est très petit, avec des hauteurs de 65 et 75 pour rep1 et 2 resp. Concernant sont PEPI550, il est de 100 pour la rep1, NA pour la rep2.
+Le génotype 39.26 est beaucoup plus grand (1m25 et 1m). Il a aussi un PEPI550 de 100 pour la rep1 uniquement.
+
+Sans prendre en compte de cofacteur, ces 2 génotypes devraient avoir le même blup, puisqu'ils ont les meme scores de PEPI550. On peut le vérifier:
+
+```{r}
+NOCOF[NOCOF[,1]=="TT06DC.42.26" | NOCOF[,1]=="TT06DC.39.26" ,]
+```
+
+Ces 2 génotypes ont donc un score équivalent. Pourtant le 42.26 est petit, donc a plus de chance d'être touché par la Fusa. On pourrait donc dire qu'il est probablement plus résistant que le 39.26. On s'attend donc à ce qu'il ait un blup un peu plus bas! Vérifions le!
+
+```{r}
+AVEC[AVEC[,1]=="TT06DC.42.26" | AVEC[,1]=="TT06DC.39.26" ,]
+```
+
+On voit que c'est clairement le cas (5.42 vs -1.7). Donc le BLUP travaille correctement et devrait nous permettre d'améliorer nos QTLs!
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#15/ Effect of PEPIL in DON blups?
+
+on va prendre GRI13 comme exemple.
+
+Quelle est la relation entre le % d'épillets touchés et la valeur de don?  
+--> quasiment pas de corrélation. Du coup ça risque de ne pas trop changer les blups j'imagine.
+```{r}
+plot(CAP13_DON$CAP13_PEPIL550 , CAP13_DON$CAP13_DON, xlab="PEPIL 550" , ylab="DON" , pch=20 , col=rgb(0.6,0.1,0.0,0.4), cex=1.3)
+abline(lm(CAP13_DON$CAP13_DON ~ CAP13_DON$CAP13_PEPIL550) , col="grey")
+```
+
+
+Je calcule les blups avec et sans prise en compte du PEPIL
+
+```{r}
+# calculate blup without 
+aov<- lmer ( GRI13_DON ~ (1|geno)  , data=GRI13_DON)
+blup <- ranef(aov, condVar = TRUE)
+without=data.frame(geno=rownames(blup$geno), GRI13_DON_blup=blup$geno[,1])
+
+# calculate blup WITH
+aov<- lmer ( GRI13_DON ~ (1|geno) +  GRI13_PEPIL550 , data=GRI13_DON)
+blup <- ranef(aov, condVar = TRUE)
+with=data.frame(geno=rownames(blup$geno), GRI13_DON_blup=blup$geno[,1])
+
+# merge all
+AA=merge( CAP13_DON_clean , without , by.x=1 , by.y=1 , all.x=T)
+AA=merge( AA, with , by.x=1 , by.y=1 , all.x=T)
+```
+
+Relation entre les 2 blups? --> C'est très corrélé!
+```{r}
+# plot
+plot(AA[,4] , AA[,5], xlab="blup basic", ylab="blup taking PEPIL into account" , pch=20, col=rgb(0.9,0.3,0.1,0.3) )
+cor(AA[,4] , AA[,5], use="complete.obs")
+```
+
+
+[//]: =========================================================================================================================
+
+
+

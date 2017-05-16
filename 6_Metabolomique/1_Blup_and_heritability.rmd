@@ -1,0 +1,286 @@
+---
+title: "Polyphénol - part 1: créer un tableau bilan"
+author: "Yan Holtz"
+date: "October 2016"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+  html_document:
+    toc: yes
+  pdf_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 3
+  word_document: default
+---
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+
+#1/ Introduction
+This file is a supplementary data attached with the publication.  
+The only goal is to create a summary file that gives the quantity of phenol compounds observed for each genotype. 
+The data are organized in 2 years (2013 and 2014)
+
+This RMD file allows to:
+- charge every file
+- compute blup of each individuals
+- compute heritability for each trait
+- merge all experiments together
+
+We need a few libraries
+```{r results='hide', message=FALSE, warning=FALSE}
+library(xtable)
+library(gdata)
+library(lme4)
+library(RColorBrewer)
+library(plotly)
+library(FactoMineR)
+my_colors=brewer.pal(8, "Set2") 
+```
+
+Let's upload every file
+```{r}
+# Watch out, to reproduct analysis, you have to update the path.
+#my_path="../../DATA/PHENOTYPE"
+#setwd(my_path)
+# Metabolomique
+DATA13=read.xls("../../DATA/PHENOTYPE/Metabolomique_Data.xlsx",  sheet = 1, header = TRUE) 
+DATA14=read.xls("../../DATA/PHENOTYPE/Metabolomique_Data.xlsx",  sheet = 2, header = TRUE) 
+# All individuals that exist for this pop:
+my_indiv=read.table("../../DATA/PHENOTYPE/all_dic2_Silur.txt", header=F)[,1]
+
+```
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#2/ Useful Functions
+
+A function to calculate heritability:
+```{r}
+calculate_herit=function(my_col, my_data){
+  
+  aov<- lmer ( my_data[,my_col] ~ (1|geno)  , data=my_data)
+  VL<-as.numeric(VarCorr(aov)$geno)
+  VRes<-as.numeric(attr(VarCorr(aov),"sc"))^2
+  hdeux=round(VL/(VL + VRes) , 6)
+  return(hdeux)
+}
+```
+
+
+A function that return BLUPs of individuals. 
+```{r}
+calculate_blup=function(my_col, my_data){
+  aov<- lmer ( my_data[,my_col] ~ (1|geno) , data=my_data)
+  blup <- ranef(aov, condVar = TRUE)
+  tmp=data.frame(rownames(blup$geno), blup$geno[,1])
+  colnames(tmp)[2]=paste( colnames(my_data)[my_col], "blup", sep="_")
+  return(tmp)
+  }
+```
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+
+#3/ Year 2013
+Clean the dataset
+```{r}
+# Rename columns:
+DATA13$geno=as.factor(gsub("TT06DC", "TT06DC.", DATA13$geno))
+```
+
+How many different individuals in this files? (counting dic2 and silur)
+```{r}
+nlevels(DATA13$geno)
+```
+
+Always 3 reps / genotypes? --> Yes indeed !
+```{r}
+table(DATA13$geno)[table(DATA13$geno)!=3]
+```
+
+How many variables?
+```{r}
+ncol(DATA13)-2
+```
+
+
+Let's calculate and print heritabilities (with and without inoc date effect):
+```{r}
+# Calcul héritabilité:
+herit_DATA13=matrix(0,1,ncol(DATA13)-2)
+colnames(herit_DATA13)=colnames(DATA13)[3:length(colnames(DATA13))]
+num=0
+for(i in c(3:ncol(DATA13))){
+  num=num+1
+  a=calculate_herit(i, DATA13)
+  herit_DATA13[1 ,num]=c(a)
+  }
+```
+
+Display these heritabilities in a table:
+```{r my_tabletrhtr1, results='asis' , echo=FALSE}
+print(xtable(herit_DATA13), type = "html", include.rownames = F , comment=FALSE)
+```
+
+And show a borplot with these heritabilities:
+```{r}
+plot_ly(x=colnames(herit_DATA13), y=herit_DATA13[1,], type="bar")%>%
+        layout(
+          yaxis = list(title = 'Heritability'),
+          xaxis = list(tickfont = list(size=2))
+        )
+```
+
+Heritabilities are incredibly high. That means repetitions are strongly correlated one each other. So we'are going to compute the blups of genotypes and use only these blups for the QTLs.
+
+
+Now we calculate the BLUP of every genotype for every variable and add it to a summary table in which we will add the 2 years:
+```{r}
+FINAL=my_indiv
+for(i in c(3:ncol(DATA13))){
+  tmp=calculate_blup(i,  DATA13)
+  FINAL=merge(FINAL , tmp, by.x=1, by.y=1, all.x=T)
+}
+colnames(FINAL)=gsub("blup","blup13", colnames(FINAL))
+```
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+
+#4/ Year 2014
+Clean the dataset
+```{r}
+# Rename columns:
+DATA14$geno=gsub("Dic2", "dic2", DATA14$geno)
+DATA14$geno=gsub("Silur", "silur", DATA14$geno)
+DATA14$geno=gsub(" L3", "", DATA14$geno)
+DATA14$geno=as.factor(gsub("TT06DC ", "TT06DC.", DATA14$geno))
+DATA14=DATA14[ , -3]
+```
+
+How many different individuals in this files? (counting dic2 and silur)
+```{r}
+nlevels(DATA14$geno)
+```
+
+Always 3 reps / genotypes? --> Yes indeed !
+```{r}
+table(DATA14$geno)[table(DATA14$geno)!=3]
+```
+
+How many variables?
+```{r}
+ncol(DATA14)-2
+```
+
+Let's calculate and print heritabilities (with and without inoc date effect):
+```{r}
+# Calcul héritabilité:
+herit_DATA14=matrix(0,1,ncol(DATA14)-2)
+colnames(herit_DATA14)=colnames(DATA14)[3:length(colnames(DATA14))]
+num=0
+for(i in c(3:ncol(DATA14))){
+  num=num+1
+  a=calculate_herit(i, DATA14)
+  herit_DATA14[1 ,num]=c(a)
+  }
+```
+
+Display these heritabilities in a table:
+```{r my_tabledfef, results='asis' , echo=FALSE}
+print(xtable(herit_DATA14), type = "html", include.rownames = F , comment=FALSE)
+```
+
+And show a borplot with these heritabilities:
+```{r}
+plot_ly(x=colnames(herit_DATA14), y=herit_DATA14[1,], type="bar")%>%
+        layout(
+          yaxis = list(title = 'Heritability'),
+          xaxis = list(tickfont = list(size=2))
+        )
+```
+
+Heritabilities are incredibly high. That means repetitions are strongly correlated one each other. So we'are going to compute the blups of genotypes and use only these blups for the QTLs.
+
+
+Now we calculate the BLUP of every genotype for every variable and add it to a summary table in which we will add the 2 years:
+```{r}
+for(i in c(3:ncol(DATA14))){
+  tmp=calculate_blup(i,  DATA14)
+  FINAL=merge(FINAL , tmp, by.x=1, by.y=1, all.x=T)
+}
+colnames(FINAL)=gsub("blup13","yoyoyo", colnames(FINAL))
+colnames(FINAL)=gsub("blup","blup14", colnames(FINAL))
+colnames(FINAL)=gsub("yoyoyo","blup13", colnames(FINAL))
+colnames(FINAL)[1]="geno"
+```
+
+Let's write this table for the qTL step.
+```{r}
+write.table(FINAL, file="../../DATA/PHENOTYPE/phenotypage_all_metabolomique.csv", quote=F, row.names=F, col.names=T, sep=";")
+```
+
+Nombre de variable final??
+```{r}
+dim(FINAL)
+```
+J'ai bien les 0 dans les noms?
+```{r}
+FINAL$geno
+```
+
+Duplicated genotyped?
+```{r}
+table(FINAL$geno)[table(FINAL$geno)>1]
+```
+
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+

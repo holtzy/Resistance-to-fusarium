@@ -1,0 +1,513 @@
+---
+title: "Description of Fusariose Phenotypes"
+author: "Yan Holtz"
+date: "October 2016"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+  html_document:
+    toc: yes
+---
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#1/ Introduction
+This file is a supplementary data attached with the publication. It aims to describe the phenotypes collected to study the resistance of durum wheat to fusariose.
+
+Let's upload the file containing all the phenotypes
+```{r}
+#Watch out, to reproduct analysis, you have to update the path.
+data=read.table("~/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/PHENOTYPE/phenotypage_all_fusa.csv" , header=T , sep=";" )
+#numeric
+data[,-1]=apply(data[,-1],2,as.numeric)
+#check no redondancy in genotype name
+table(data$geno)[table(data$geno)>1]
+# put geno name as rowname
+rownames(data)=data$geno
+data=data[,-1]
+# delete columns with only NA
+which(apply( data , 2 , function(x) all(is.na(x)) )==TRUE)
+data=data[ , ! apply( data , 2 , function(x) all(is.na(x)) ) ]
+```
+
+
+How many different phenotypes do we have?
+```{r}
+ncol(data)-1
+```
+
+How many different genotypes do we have? (counting dic2 and silur)
+```{r}
+nrow(data)
+```
+
+
+Charge some libraries that will be useful
+```{r results='hide', message=FALSE, warning=FALSE}
+library(RColorBrewer)
+library(xtable)
+library(plotly)
+library(FactoMineR)
+```
+
+Let's create a color vector for the study
+```{r}
+my_colors = brewer.pal(8, "Set2") 
+my_colors = colorRampPalette(my_colors)(15)
+```
+
+
+Let's create some objects denoting groups of genotype:
+```{r}
+# reps
+REP1=grep("rep1", colnames(data) )
+REP2=grep("rep2", colnames(data) )
+BLUP=grep("blup", colnames(data) )
+
+# experiments
+CAP13=grep("CAP13", colnames(data) )
+GRI11=grep("GRI11", colnames(data) )
+GRI13=grep("GRI13", colnames(data) )
+GRI15=grep("GRI15", colnames(data) )
+LEC14=grep("LEC14", colnames(data) )
+BEQ11=grep("BEQ11", colnames(data) )
+BAR14=grep("BAR14", colnames(data) )
+
+# Type de phéno NEPI, NEPIL, PEPIL, NOT, DON
+PEPIL=grep("PEPIL", colnames(data) )
+PEPI=grep("PEPI", colnames(data))
+PEPI=setdiff(PEPI, PEPIL)
+NEPIL=grep("NEPIL", colnames(data) )
+NOT=grep("NOT", colnames(data) )
+DON=grep("DON", colnames(data) )
+
+# AUDPC et derniere notation
+AUDPC=grep("AUDPC", colnames(data) )
+LAST=AUDPC-1
+
+# agronomical variable
+EPI=grep("_EPI" , colnames(data) )
+FLO=grep("FLO" , colnames(data) )
+HEI=grep("HEI" , colnames(data) )
+```
+
+
+Let's check if we have every variable we expect for publication in this table! --> everything is all right!
+```{r}
+# CAP13 --> must be 13
+a=intersect(CAP13,BLUP) ; a=intersect(a,c(DON, NOT, PEPI, NEPIL, PEPIL)) ; length(a)
+# GRI11 --> must be 12
+a=intersect(GRI11,BLUP) ; a=intersect(a,c(DON, NOT, PEPI, NEPIL, PEPIL)) ; length(a)
+# GRI13 --> must be 17
+a=intersect(GRI13,BLUP) ; a=intersect(a,c(DON, NOT, PEPI, NEPIL, PEPIL)) ; length(a)
+# GRI15 --> must be 12
+a=intersect(GRI15,BLUP) ; a=intersect(a,c(DON, NOT, PEPI, NEPIL, PEPIL)) ; length(a)
+# LEC14 --> must be 12 + DON qui n'a pas de blup=13
+a=intersect(LEC14,BLUP) ; a=intersect(a,c(DON, NOT, PEPI, NEPIL, PEPIL)) ; length(a)
+# BEQ11 --> must be 13
+a=intersect(BEQ11,c(DON, NOT, PEPI, NEPIL, PEPIL)) ; length(a)
+# BAR14 --> must be 17 / one is useless (NEPIL_blup)
+a=intersect(BAR14,BLUP) ; a=intersect(a,c(DON, NOT, PEPI, NEPIL, PEPIL)) ; length(a)
+```
+
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#2/ Experiments description
+
+##Locations and year
+There are 3 years concerned by this study: 2011, 2013, and 2015.
+There are 5 location concerned by this study: Montbartier, Lectoure, Cappelle, Grisolles and Monbequi.
+Finally, there 7 experiments that will be useful in this study.
+Let's summarize it in a table.
+
+```{r}
+A=matrix("-",5,4)
+rownames(A)=c("Cappelle","Grisolles","Lectoure","Monbequi","Monbartier")
+colnames(A)=c("2011", "2013", "2014","2015")
+v2011=c("-","Yes","-","Yes","-")
+v2013=c("Yes","Yes","-","-","-")
+v2014=c("-","-","Yes","-","Yes")
+v2015=c("-","Yes","-","-","-")
+A[,c(1:4)]=c(v2011,v2013,v2014,v2015)
+```
+
+```{r my_table1, results='asis'}
+print(xtable(A), type = "html", include.rownames = T , comment=FALSE)
+```
+
+Les pressions fongiques sont différentes d'une parcelle à l'autre:
+- faible: Montbartier 2014, Montbequi
+- Moyen: Grisolles
+- Fort : Cappelle
+
+
+## Phenotyping methods
+
+2 types de résistance:
+ - type 1: capacité à toucher un épi (on compte le nbr d'épi touchés)
+ - type2: capacité à se propager dans un épi (on compte le nombre d'épillets touchés)
+ 
+We have several phenotyping methods used in this study:
++Fusariose:
+  ++ resistance
+      - note fusa?
+      - number of spike with fusariose symptom
+      - % of spike with fusariose symptpom
+      - extrusion des antheres=sinon, le champi reste et se dvlp.
+ 
+  ++ toxinogénèse=quantité de toxine que le champignon laisse sur le grain
+    - DON=quantité de toxine, mesuré par dosage biochimique. (ultra chèr). Pas sur tous les essais du coup.
+    
+
++Agronomical features:
+  - flowering data
+  - height
+  - Long_col_epi?
+  - Compacité épi --pourrait etre favorable au déplacement du champi
+  - verse: a mark going from 0 to 8
+  
++ Metabolome: va intervenir en ralentissant la dispersion du champi, soit en limitant la quntité de toxine en surface (DON). On a pris des plantes infectées et des saines. Prélevement de graines immatures. On a pris 40 composés phénoliques potentiellement intéressant. Et on compare au cours du temps entre sain et sensibles pour voir si il y a une différence de concentration de ces composés. Ces 40 composés sont constitutifs: rien a voir avec la présence de champignon. Par contre ces composés phénol évoluent au fil du temp + sont différents entre résistant et sensibles.
+
+
+See the "table" folder in the dropbox for an extensive description of available phenotypes for each trial and each phenotyping date.
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#3/ Descriptive analysis?
+
+## NOTE
+Let's plot the histogram of every rep1 of the NOTE.  
+Pas de note pour CAP13.  
+On observe bien l'augmentation de la maladie dans le temps.  
+ - GRI11 > GRI13 > GRI15 en terme de quantité de symptome.   
+ - BEQ11 Très touché  
+
+```{r, fig.height=12}
+par(mfrow=c(5,4), mar=c(4,3,1,1))
+for(i in c( intersect(NOT, REP1), intersect(NOT, BEQ11) )   ){
+  hist( data[,i]  ,  border=F, xlab="" , col=my_colors[6], main="", las=1)
+  abline( v=c( data[rownames(data)=="dic2", i], data[rownames(data)=="silur", i]), col=c("blue","red") , lwd=2)
+  a=gsub("_rep1", "", colnames(data)[i])
+  a=paste(a, " | ", round(mean(data[,i],na.rm=T),2), sep="")
+  title( a , col.main="blue" , cex.main=0.7)
+  }
+```
+
+
+## PEPI
+Pas de PEPI pour GRI11 seulement.
+On a bien qqchose entre 0 et 100.
+Observation:  
+- Not a normal distribution --> importance des blups.
+- CAP13 / GRI13: for taux d'épi touchés. On constate une net évolution au cours du temps : hist par vers la droite 
+- LEC14 / BAR 14: faible taux d'épi touché, moins de contamination?
+- Répartition plus uniforme pour les AUDPC
+
+
+```{r, fig.height=12}
+par(mfrow=c(6,4), mar=c(2,3,1,1))
+for(i in c( intersect(PEPI, REP1), intersect(PEPI, BEQ11) )  ){
+  hist( data[,i]  ,  border=F, xlab="" , col=my_colors[3], main="", las=1)
+  abline( v=c( data[rownames(data)=="dic2", i], data[rownames(data)=="silur", i]), col=c("blue","red") , lwd=2)
+  a=gsub("_rep1", "", colnames(data)[i])
+  a=paste(a, " | ", round(mean(data[,i],na.rm=T),2), sep="")
+  title( a, col.main="blue" , cex.main=0.7)
+  }
+```
+
+
+
+
+## NEPIL
+Dispo pour toutes les parcelles.  
+Observation:  
+```{r, fig.height=12}
+par(mfrow=c(7,5), mar=c(4,3,1,1))
+for(i in c( intersect(NEPIL, REP1), intersect(NEPIL, BEQ11) ) ){
+  hist( data[,i]  ,  border=F, xlab="" , col=my_colors[4], main="", las=1)
+  abline( v=c( data[rownames(data)=="dic2", i], data[rownames(data)=="silur", i]), col=c("blue","red") , lwd=2)
+  a=gsub("_rep1", "", colnames(data)[i])
+  a=paste(a, " | ", round(mean(data[,i],na.rm=T),2), sep="")
+  title( a, col.main="blue" , cex.main=0.7)
+  }
+```
+
+
+## PEPIL
+```{r, fig.height=12}
+par(mfrow=c(5,4), mar=c(4,3,1,1))
+for(i in c( intersect(PEPIL, REP1), intersect(PEPIL, BEQ11) )   ){
+  hist( data[,i]  ,  border=F, xlab="" , col=my_colors[5], main="", las=1)
+  abline( v=c( data[rownames(data)=="dic2", i], data[rownames(data)=="silur", i]), col=c("blue","red") , lwd=2)
+  a=gsub("_rep1", "", colnames(data)[i])
+  a=paste(a, " | ", round(mean(data[,i],na.rm=T),2), sep="")
+  title( a, col.main="blue" , cex.main=0.7)
+  }
+```
+
+## BLUP
+Let's plot the histogram of every BLUPs of the NOTE.  
+On doit voir Dic2 et Silur très très proche du coup, plus de diff entre les 2 !
+
+```{r, fig.height=12}
+par(mfrow=c(4,4), mar=c(4,3,1,1))
+for(i in c( intersect(NOT, BLUP), intersect(NOT, BEQ11) )   ){
+  hist( data[,i]  ,  border=F, xlab="" , col=my_colors[6], main="", las=1)
+  abline( v=c( data[rownames(data)=="dic2", i], data[rownames(data)=="silur", i]), col=c("blue","red") , lwd=2)
+  a=gsub("_rep1", "", colnames(data)[i])
+  a=paste(a, " | ", round(mean(data[,i],na.rm=T),2), sep="")
+  title( a , col.main="blue" , cex.main=0.7)
+  }
+```
+
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#4/ PCA
+
+## Par parcelle
+On va garder la rep1 seulement à chaque fois, et faire une ACP pour chaque expé:  
+
+```{r, fig.height=8}
+plot_my_PCA=function( exp){
+  a=intersect(exp, c(FLO, HEI, PEPI, NEPIL, PEPIL, NOT, DON))
+  a=intersect(a, REP1)
+  res.PCA = PCA(data[ , a ] , scale.unit=TRUE, ncp=3, graph=F) 
+  plot.PCA(res.PCA, axes=c(1, 2), choix="var", cex=0.7, title="" )
+}
+# CAP13
+plot_my_PCA(CAP13)
+```
+
+
+```{r, fig.height=8}
+# GRI11
+plot_my_PCA(GRI11)
+```
+
+```{r, fig.height=8}
+# GRI13
+plot_my_PCA(GRI13)
+```
+
+```{r, fig.height=8}
+# GRI15
+plot_my_PCA(GRI15)
+```
+
+```{r, fig.height=8}
+# LEC14
+plot_my_PCA(LEC14)
+```
+
+```{r, fig.height=8}
+# BEQ11
+a=intersect(BEQ11, c(FLO, HEI, PEPI, NEPIL, PEPIL, NOT, DON))
+res.PCA = PCA(data[ , a ] , scale.unit=TRUE, ncp=3, graph=F) 
+plot.PCA(res.PCA, axes=c(1, 2), choix="var", cex=0.7, title="" )
+```
+
+```{r, fig.height=8}
+# BAR14
+plot_my_PCA(BAR14)
+```
+
+
+
+## Par trait
+Pour voir si des expé ont tendance à se ressembler et si les individus résistants sont stables d'une parcelle à l'autre.
+
+```{r, fig.height=8}
+# Function for the PCA
+replot_my_PCA=function(trait){
+  a=c( intersect(trait, REP1), intersect(trait, BEQ11)) 
+  b=as.numeric( as.factor( gsub("_.*","", colnames(data)[a]) ))
+  res.PCA = PCA(data[ , a ] , scale.unit=TRUE, ncp=3, graph=F) 
+  plot.PCA(res.PCA, axes=c(1, 2), choix="var", cex=0.7, title="" , col.var = my_colors[b])
+}
+
+
+# Function to calculate correlation
+calculate_cor=function(trait){
+  a=c( intersect(trait, REP1), intersect(trait, BEQ11)) 
+  a=intersect(a, AUDPC)
+  out=round(cor(data[,a] , use="complete.obs"),2)
+  colnames(out)=gsub("_.*","",colnames(out))
+  rownames(out)=colnames(out)
+  diag(out)="-"
+  out[lower.tri(out)]="-"
+  return(out)
+}
+```
+
+Apply it
+```{r my_tablefef, results='asis' , echo=FALSE}
+replot_my_PCA(NOT)
+print(xtable(calculate_cor(NOT) ), type = "html", include.rownames = T , comment=FALSE)
+```
+
+```{r my_tablervref, results='asis' , echo=FALSE}
+replot_my_PCA(PEPI)
+print(xtable(calculate_cor(PEPI) ), type = "html", include.rownames = T , comment=FALSE)
+```
+
+```{r my_tablenhtef, results='asis' , echo=FALSE}
+replot_my_PCA(NEPIL)
+print(xtable(calculate_cor(NEPIL) ), type = "html", include.rownames = T , comment=FALSE)
+```
+
+```{r my_tablelljh, results='asis' , echo=FALSE}
+replot_my_PCA(PEPI)
+print(xtable(calculate_cor(PEPI) ), type = "html", include.rownames = T , comment=FALSE)
+```
+
+
+
+
+
+
+## Agronomical features
+Let's plot a PCA to see the relationship between variables height, precocity and flowering time.
+There is a strong relationship between FLO and EPI. These 2 variables are not correlated with height. These 3 variable are very stable among experiments.
+
+```{r, fig.height=8}
+res.PCA = PCA(data[ , c(EPI, FLO, HEI) ] , scale.unit=TRUE, ncp=3, graph=F) 
+ze_col=c( rep(my_colors[1], length(EPI)), rep(my_colors[2], length(FLO)), rep(my_colors[3], length(HEI)) )
+plot.PCA(res.PCA, axes=c(1, 2), choix="var", cex=0.7, col.var=ze_col, title="" )
+```
+
+
+
+## Important Blups
+ACP avec les Blups des AUDPC et des dernières notations. Couleur=parcelle.
+```{r, fig.height=8}
+a=intersect(BLUP,c(AUDPC,LAST))
+b=as.numeric( as.factor( gsub("_.*","", colnames(data)[a]) ))
+res.PCA = PCA(data[ , a ] , scale.unit=TRUE, ncp=3, graph=F) 
+plot.PCA(res.PCA, axes=c(1, 2), choix="var", cex=0.7, title="", col.var = my_colors[b] )
+
+```
+
+
+## Conclusion
+- FLO et EPI sont très corrélés. On peut en garder un des 2 seulement.  
+- Plantes plus haute = plante moins malade. Grosse corrélation négative. --> cafacteur pour les QTLs? Ou dans le calcul des blups?
+- à l'échelle de l'expé, les variable se groupe par date d'observation, pas par méthode de phénotypage! Donc méthode de phéno = hautement correlées. Date d'observation = importante.
+- Grande variance inter expé. Que ce soit variable par variable ou en prenant toutes les variables, on a systématiquement un regroupement par expé très net qui apparait.
+- 
+
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+#5/ Evolution de la maladie
+
+Observation de l'évolution de PEPI pour 50 individus de Montbartier 2014. Il y a 4 dates de notation dispo.
+
+```{r}
+# get dataa of PEPI in bar14
+a=intersect(BAR14,PEPI)
+a=intersect(a,REP1)
+a=setdiff(a,AUDPC)
+don=data[,a]
+# plot it
+par(mar=c(2,3,2,2))
+plot(as.numeric(don[1,])~seq(1,4), type="o", pch=20, ylim=c(0,100), xaxt="n", ylab="PEPI (%)", xlab="", bty="n", col=my_colors[5])
+mtext(at=c(1:4) ,gsub("BAR14_","",gsub("_rep1","",colnames(don))) , side=1, col="grey")
+abline(v=c(1:4), col="grey")
+for(i in c(2:50)){
+  points(as.numeric(don[i,])~seq(1,4) , type="o", pch=20, col=my_colors[5])
+}
+
+```
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-
+
+
+
+
+
