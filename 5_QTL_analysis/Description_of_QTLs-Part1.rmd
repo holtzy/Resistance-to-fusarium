@@ -4,32 +4,24 @@ author: "Yan Holtz"
 date: "October 2016"
 output:
   rmdformats::readthedown:
-    highlight: kate
-  html_document:
-    toc: yes
-    toc_depth: 3
+    code_folding: hide
 ---
-
 
 
 [//]: =========================================================================================================================
 #1/ Introduction
-This file aims to describe the QTLs found for fusariose resistance.   
-It concerns the evaluation of more than 300 variables, so it can be a bit long to run it.  
-Let's upload the file containing all the LOD scores. It contains about 4M lines, so it is quite long...(~2minutes)
+This file aims to **describe the QTLs** found concerning fusariose resistance.   
+It concerns the evaluation of **every blups** computed before.  
+Let's upload the file containing all the LOD scores. It contains about 1.6M lines, so it is a bit long
 ```{r}
 #Watch out, to reproduct analysis, you have to update the path.
 data=read.table("~/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/bilan_simple_marker.gz" , header=T , sep="," )
-data=data[ order(data$LG , data$Distance) , ]
+#data=data[ order(data$LG , data$Distance) , ]
 # random lines of the dataset to develop quicker
 #data=data[ sample( seq(1,nrow(data)) , 30000 )  , ]
 #data=data[ order(data$LG , data$Distance) , ]
 ```
 
-Let's upload the physical position of every genes of the BWr
-```{r}
-POS=read.table("/Users/yan/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/physical_map_of_BW.txt", na.string="-" , header=T , dec=".") ; colnames(POS)=c( "chromo_BW" ,  "contig" ,"position_BW" )
-```
 
 Let's upload the genotyping matrix:
 ```{r}
@@ -42,10 +34,11 @@ geno= as.data.frame(geno[-1 , ])
 #geno <- geno [ geno[,1] %in% names(data),]
 ```
 
+
 Let's upload the phenotyping matrix:
 ```{r}
 #Watch out, to reproduct analysis, you have to update the path.
-pheno=read.table("~/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/PHENOTYPE/phenotypage_all_fusa.csv" , header=T , sep=";" )
+pheno=read.table("~/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/PHENOTYPE/phenotypage_all_fusa_blup.csv" , header=T , sep=";" )
 #numeric
 pheno[,-1]=apply(pheno[,-1],2,as.numeric)
 #check no redondancy in genotype name
@@ -59,13 +52,17 @@ pheno=pheno[ , ! apply( pheno , 2 , function(x) all(is.na(x)) ) ]
 ```
 
 
+
 Charge some libraries that will be useful
 ```{r results='hide', message=FALSE, warning=FALSE}
 library(RColorBrewer)
+library(rmdformats)
 library(xtable)
 library(plotly)
 library(FactoMineR)
+library(knitr)
 ```
+
 
 Let's create a color vector for the study
 ```{r}
@@ -73,13 +70,14 @@ my_colors = brewer.pal(8, "Set2")
 my_colors = colorRampPalette(my_colors)(20)
 ```
 
-How many variables do we have? --> 312 phenotypic variables.
+
+How many variables do we have?
 ```{r}
 my_carac=levels(data$variable)
 nlevels(data$variable)
 ```
 
-What is the LOD threshold to declare a QTL significant?
+What is the LOD threshold to declare a QTL significant? I declare it to 3.73
 ```{r}
 my_QTL_thres=3.73
 ```
@@ -127,6 +125,7 @@ PUBLI=c(b,c,"LEC14_DON")
 ```
 
 
+
 Let's check what is available for which experiment?
 ```{r}
 # start table
@@ -144,11 +143,11 @@ for(i in all){
    a=intersect(i, j)
    bilan[ num2 , num1]=length(a)
   }}
+kable(xtable(bilan))
 ```
 
-```{r my_tabledkokd1, results='asis' , echo=FALSE}
-print(xtable(bilan), type = "html", include.rownames = T , comment=FALSE)
-```
+
+
 
 We know that:  
 - DON is available for CAP13, GRI13 and BAR14 only.
@@ -173,7 +172,28 @@ So please check it is indeed what we have in this QTL file!
 [//]: =========================================================================================================================
 #2/ Useful functions
 
+A set of function allowing to characterize **significant QTLs** for a set of variable:
 ```{r}
+#Same function but with interactive graphics!
+plot_a_interactiveQTL=function(data, select_chromo, my_variable, LOD_threshold, my_ylim){
+  p=data %>%
+    filter(LG==select_chromo & variable %in% my_variable) %>%
+    group_by(variable, Distance) %>%
+    select(Distance, variable, LOD, R2, group_physique, Posi_physique) %>%
+    summarise(
+      LOD=max(LOD),
+      R2=max(R2, na.rm=T),
+      Posi_physique=mean(Posi_physique, na.rm=T),
+      group_physique=table(group_physique)[1]
+    ) %>%
+    mutate(my_text=paste("<br>", "Pos phy: ", group_physique , " | ", Posi_physique , sep="")) %>%
+    ggplot(aes(x=Distance, y=LOD, color=variable)) +
+      geom_line()
+ 
+# interactive
+ggplotly(p)
+}
+
 #A function to plot a QTL and visualize the LOD scores along the chromosome. Works for several variable on a specific chromosome.
 plot_a_QTL=function(data, select_chromo, variable, LOD_threshold, my_ylim){
   
@@ -200,33 +220,6 @@ plot_a_QTL=function(data, select_chromo, variable, LOD_threshold, my_ylim){
   legend("topleft" , horiz=F , col="white" , legend=select_chromo , bty="n" , lty=1 , pt.cex=0, lwd=1.6)
 
   }
-
-#Same function but with interactive graphics!
-plot_a_interactiveQTL=function(data, select_chromo, variable, LOD_threshold, my_ylim){
-
-# keep selected data & order it
-a=data[data$variable%in%variable & data$LG==select_chromo & !is.na(data$LOD) , ]
-a=a[ order(a$LG , a$Distance) , ]
-
-#When I have several markers at the same position, I replace the LOD-scores by the highest LOD-scores of the position
-for(i in nrow(a)){
-  highest=max(a$LOD[which(a$variable==a$variable[i] & a$Distance==a$Distance[i])])  
-  a$LOD[i]=highest
-}
-
-#create text for hover
-a$text=paste(a$variable,"<br>",a$marqueur,"<br>","allèles A et B: ",round(a$moy.A,2)," | ",round(a$moy.B,2), "<br>","Pos gen: ", a$Distance , "<br>", "Pos phy: ", a$group_physique , " | ", a$Posi_physique , sep="")
-
-# plot
-plot_ly( x=a$Distance, y=a$LOD, type="scatter", mode="lines", text=a$text, hoverinfo="text", color=a$variable)%>%
-add_trace(x=seq.int(from=0, to=max(a$Distance,na.rm=T), length.out = nrow(a) ), y=rep(LOD_threshold, nrow(a)), type="scatter", mode = "lines", line=list(color="grey"), hoverinfo="none") %>%
-layout(
-  showlegend=F,
-  hovermode="closest",
-  xaxis=list(title="Genetic position (cM)"),
-  yaxis=list(title="LOD score" , range=c(0, my_ylim) )
-  )
-}
 
 #A function to summarize all the significant QTL of a list of variables. Gives the max LOD score, the IC, the position etc..
 summary_table_for_QTL=function(data, selected_variable, LOD_threshold, size_IC){
@@ -292,7 +285,10 @@ bil=bil[ order(bil$pop , bil$chromo , bil$carac) , ]
 return(bil)
 #close function
 }
+```
 
+A set of function allowing to study **confidence intervals**:
+```{r}
 #A function to represent confidence interval of QTLs on the genetic map.
 show_IC_QTL_on_map=function(data, selected_variable, selected_chromosome, LOD_threshold, size_IC){
 
@@ -423,46 +419,8 @@ show_genes_of_IC=function(min_IC, max_IC, chrom, my_lwd, my_cex, to_remove){
   }
 ```
 
-TODO
-A function to do an interactive representation of the IC, with physical and genetic correspondances..
-```{r, eval=FALSE}
 
-#### A FINIR A L'OCCAS
-
-#get data for the IC
-min_IC=1
-max_IC=9
-chrom="1B"
-IC_map=data[ which(data$LG==chrom & data$Distance>=min_IC & data$Distance<=max_IC & data$group==data$group_physique & data$variable==levels(data$variable)[1]), c(1:5)]
-
-# Make a Y vector for the connection between markers
-pos=as.matrix(na.omit(IC_map[,c(3,5)]))
-my_vect=as.vector(t(pos))
-correctif=seq(1:length(my_vect)) + rep(c(0,0,1,-1) , length.out=length(my_vect) )  
-my_vect=my_vect[correctif]
-if(length(my_vect)%%4 == 0){ my_vect=c(my_vect , my_vect[length(my_vect)] , my_vect[length(my_vect)-1]) } 
-yaxis=my_vect
-
-# Make a X vector
-xaxis=rep( c(1,2,2,1), nrow(IC_map)/2 )
-if(length(xaxis)%%4 == 0){ xaxis=c(xaxis , xaxis[length(xaxis)] , xaxis[length(xaxis)-1]) } 
-
-# Make the interactive graphic
-p=plot_ly(x=xaxis , y=yaxis , hoverinfo="none", line=list(width=1, color="grey" , opacity=0.1) , showlegend=F)    
-#layour
-p=layout( 
-  hovermode="closest"  ,
-  xaxis=list(title = "", zeroline = FALSE, showline = FALSE, showticklabels = FALSE, showgrid = FALSE , range=c(0.5,nb_selected_maps+0.5) ),
-  yaxis=list(range=c(0,500), autorange = "reversed", title = "Position (cM)", zeroline = F, showline = T, showticklabels = T, showgrid = FALSE   ,  tickfont=list(color="grey", size=15) , titlefont=list(color="grey", size=15) , tickcolor="grey" , linecolor="grey")
-)
-# line for 2 chromosomes:
-p=add_trace( x=c(1,2), y=c(0, max(IC_map$Posi_physique,na.rm=T)) , evaluate=TRUE , line=list(width=4, color="black"),showlegend=F )
-p=layout( yaxis=list(range=c(0,IC_map$Posi_physique)) )
-p
-```
-
-
-A function to boxplot a phenotype following 2 alleles?
+What happens on a **specific position**
 ```{r}
 # A function to represent a QTL. It makes a boxplot with 2 categories: alleles A and B
 boxplot_a_QTL=function(marker, trait, ...){
@@ -471,34 +429,29 @@ boxplot_a_QTL=function(marker, trait, ...){
   nucl= geno[,c(1,which(colnames(geno)==marker)) ]
   my_pheno= data.frame(ind=rownames(pheno), pheno[ , trait])
   AA=merge(my_pheno, nucl, by.x=1, by.y=1, all=T)
+  colnames(AA)=c("Genotype", "Phenotype", "Allele")
+  AA$Allele[which(AA$Genotype=="dic2")]="A"
+  AA$Allele[which(AA$Genotype=="silur")]="B"
+  AA=na.omit(AA)
+  AA$Genotype
+  
+  # Highlight Dic2 and Silur
+  AA$type=factor(ifelse(AA$Genotype=="dic2" | AA$Genotype=="silur","Highlighted",AA$Allele))
+  
+  # Make plot
+  p=ggplot(AA, aes(x=Allele, y=Phenotype, text=Genotype, fill=type, color=type )) +
+    geom_boxplot(alpha=0.5) + 
+    geom_jitter() + 
+    theme(legend.position="none") +
+    ggtitle(trait)
 
-  # Compute means
-  my_means=aggregate(AA[,2] , by=list(AA[,3]), mean, na.rm=T)
-  my_meanA=round(my_means[1,2] , 2)
-  my_meanB=round(my_means[2,2] , 2)
-  # T test
-  my_ttest=round(t.test(AA[,2]~AA[,3])$p.value , 2)
-
-  # Basic boxplot
-  boxplot(AA[,2]~AA[,3], 
-        col=my_colors[c(5,6)], 
-        ...,
-        ylab=paste("value of ",gsub("\\|T.*","",trait),sep=""), 
-        xlab=paste("allele of ",marker,sep="") , 
-        main=paste("A: ",my_meanA," | B: ",my_meanB," | pval: ",my_ttest, sep="" ) 
-        )
-
-  # Add data points
-  mylevels<-levels(AA[,3])
-  levelProportions<-summary(AA[,3])/nrow(AA)
-  for(i in 1:length(mylevels)){
-    thislevel<-mylevels[i]
-    thisvalues<-AA[AA[,3]==thislevel, 2]
-    # take the x-axis indices and add a jitter, proportional to the N in each level
-    myjitter<-jitter(rep(i, length(thisvalues)), amount=levelProportions[i]/2)
-    points(myjitter, thisvalues, pch=20, col=rgb(0,0,0,.2)) 
+  # interactive
+  ggplotly(p)
   }
-}
+```
+
+What about epistasic relationships
+```{r}
 
 #A function to calculate interaction between 2 QTLs for a trait
 # Function to calculate interaction effect between QTLs:
@@ -551,12 +504,7 @@ boxplot_two_QTL=function(marker1, marker2, trait, ...){
                expression(paste('Silur'["1B"],"-",'Silur'["5A"])) )
   axis(labels=my_labels , at=c(1,2,3,4) , side=T)
 }
-```
 
-
-
-A function to boxplot 2 QTLs together -> INTERACTIVE
-```{r}
 # A function to represent a QTL. It makes a boxplot with 2 categories: alleles A and B
 boxplot_two_QTL_interactive=function(marker1, marker2, trait, ...){
 
@@ -620,10 +568,10 @@ plot_ly(AA) %>%
 
 [//]: =========================================================================================================================
 #3/ Determine LOD threshold
-We used R-QTL to do some permutation and determine which is the LOD threshold over which q QTL can be considered as significant.
+We used **R-QTL** to do some permutation and determine which is the LOD threshold over which q QTL can be considered as significant.
 (This is done on a cluster because of long computation time).
-A lod threshold was calculated for each trait.
-The highest treshold observed was 3.73. We thus used this threshold for every trait since it is the most conservative one.
+A lod threshold was calculated for **each trait**.
+The highest treshold observed was **3.73**. We thus used this threshold for every trait since it is the most conservative one.
 
 ```
 cd ~/work/FUSA/LOD_SEUIL
@@ -650,10 +598,11 @@ hist(data[,1])
 
 
 
+
 [//]: =========================================================================================================================
 #4/ Agronomical features
-Let's check if we found the expected QTLs for height and flowering date (already known in the litterature..)
 
+Let's check if we found the expected QTLs for **height** and **flowering date** (already known in the litterature..).
 
 
 ## height
@@ -665,15 +614,12 @@ plot_a_interactiveQTL(data, "4B", HEI  , my_QTL_thres, 40)
 Same result in a table:
 ```{r, warning=FALSE}
 summary_QTL_HEI=summary_table_for_QTL(data, HEI, my_QTL_thres, 1.5)
-```
-
-```{r my_tablzzzfdfvd1, results='asis' , echo=FALSE}
-print(xtable(summary_QTL_HEI), type = "html", include.rownames = F , comment=FALSE)
+kable(xtable(summary_QTL_HEI))
 ```
 
 We can see that this QTL is really consistent from one experiment to another. Dic2 is taller than Silur. Let's visualize it in a boxplot:
-```{r}
-boxplot_a_QTL("Traes_4BS_684D5DDDB@884", "CAP13_HEI_rep1"  )
+```{r, warning=F}
+boxplot_a_QTL("TRIDC4BG006730.1@987", "CAP13_HEI_blup"  )
 ```
 
 
@@ -686,16 +632,19 @@ p2=plot_a_interactiveQTL(data, "7B", FLO  , my_QTL_thres, 30)
 subplot(p1, p2)
 ```
 
-## Verse?
+## Verse
 There is only one QTL for the "verse", on the same position that the QTL that controls height. This is quite logical: the higher is the plant, the more chance it has to fall...
 Verse is available for CAP13 only. It is funny to see that the QTL is significant for rep1 and rep2, but not for the blup...
 ```{r}
 plot_a_interactiveQTL(data, "4B", VER , my_QTL_thres, 30)
 ```
 
+## Epaisseur des glumes
 
+TODO
 
 [//]: =========================================================================================================================
+
 
 
 
@@ -717,10 +666,7 @@ Let's summarize in a table every significant QTL for the "DON" variable:
 
 ```{r, warning=FALSE}
 summary_QTL_DON=summary_table_for_QTL(data, DON, my_QTL_thres, 1.5)
-```
-
-```{r my_tabledvfdfvd1, results='asis' , echo=FALSE}
-print(xtable(summary_QTL_DON), type = "html", include.rownames = F , comment=FALSE)
+kable(xtable(summary_QTL_DON))
 ```
 
 If we consider only blups, there is only one QTL on chromosome 3A, with a LOD of 4.19 for DON in CAP13.  
@@ -734,26 +680,19 @@ There is absolutely no effect for other trials than CAP13...
 
 
 
-
 ## Type 1: Note FUSA
-Summary of all the significant QTLs for the NOT: 
+Summary of all the significant QTLs for the ** visual notation**: 
 
 ```{r, warning=FALSE}
 summary_QTL_NOT=summary_table_for_QTL(data, NOT, my_QTL_thres, 1.5)
-```
-
-```{r my_tabledvd2, results='asis', echo=FALSE}
-print(xtable(summary_QTL_NOT), type = "html", include.rownames = F , comment=FALSE)
+kable(xtable(summary_QTL_NOT))
 ```
 
 
-I have 2 main QTLs: on the 1B and on the 5A.  
-Then I have some really small messages on 2A - 2B - 3A  
-And also the QTL linked with height and precocity on chromo 4B and 7B.  
-But 4B-height QTL does not appear for BLUPs --> is it due to the fact thatI added height in the model while calculating blups?
-  
+I have 2 main QTLs: on the **1B** and on the **5A**.  
+Then I have some really small messages on 3A for Gri13, and 7B for Gri15 
+
 Let's show the QTLs on graphics. We show only the last note and audpc for blup when available.
-
 ```{r}
 toshow=c("GRI11_NOT550_blup","GRI11_NOTAUDPC_blup","GRI13_NOT550_blup","GRI13_NOTAUDPC_blup","GRI15_NOT550_blup","GRI15_NOTAUDPC_blup","BEQ11_NOT500","BEQ11_NOTAUDPC","BAR14_NOT600_blup")
 #Chromosome 1B
@@ -764,9 +703,9 @@ plot_a_interactiveQTL(data, "5A", intersect(NOT,PUBLI), my_QTL_thres, 10)
 
 Let's visualize an example trough a boxplot:
 ```{r}
-par(mfrow=c(1,2))
-boxplot_a_QTL("Traes_1BS_B9CBEFAE5@3346", "GRI15_NOTAUDPC_rep2" )
-boxplot_a_QTL("Traes_5AL_A714BA22E@655", "GRI15_NOTAUDPC_rep2")
+a=boxplot_a_QTL("TRIDC0UG001570.3@2193", "GRI15_NOTAUDPC_blup" )
+b=boxplot_a_QTL("TRIDC5AG067550.4@2885", "BEQ11_NOTAUDPC")
+subplot(a,b)
 ```
 
 
@@ -779,13 +718,11 @@ A lot of significant QTLs.
 
 ```{r, warning=FALSE}
 summary_QTL_PEPI=summary_table_for_QTL(data, PEPI, my_QTL_thres, 1.5)
+kable(xtable(summary_QTL_PEPI))
 ```
 
-```{r my_tablevfdbgdfbgfd3, results='asis', echo=FALSE}
-print(xtable(summary_QTL_PEPI), type = "html", include.rownames = F , comment=FALSE)
-```
-
-Two main QTLs on chromosome 1B and 5A. For the 1B QTLs, it is interesting to see that once more, the resistance allele comes from Silur.. How is it possible? The 1B QTLs works for BAR14 only, but for every traits and with strong LOD-scores.The 5A works for 3 experiments.  
+Two main QTLs on chromosome 1B and 5A. 
+For the 1B QTLs, it is interesting to see that once more, the resistance allele comes from Silur.. How is it possible? The 1B QTLs works for BAR14 only, but for every traits and with strong LOD-scores.The 5A works for 3 experiments.  
 Then we have some small signals on chromosomes 2A, 2B, 3A, 4A, 6A. Nothing really interesting.  
 And once more the QTL linked with height and precocity on chromosomes 4B and 7B. For the 4B--> no BLUP.
 
@@ -804,10 +741,10 @@ plot_a_interactiveQTL(data, "5A", my_var_to_show, my_QTL_thres, 7)
 An example for QTL 1B and 5A on a boxplot:
 
 Let's visualize an example trough a boxplot:
-```{r}
-par(mfrow=c(1,2))
-boxplot_a_QTL("Traes_1BS_B9CBEFAE5@3346", "BAR14_PEPI600_rep1")
-boxplot_a_QTL("Traes_5AL_8682BB101@185", "GRI15_PEPI550_rep2")
+```{r, warning=FALSE}
+a=boxplot_a_QTL("TRIDC1BG001970.2@434", "BAR14_PEPIAUDPC_blup")
+b=boxplot_a_QTL("TRIDC5AG065260.2@750", "BAR14_PEPIAUDPC_blup")
+subplot(a,b)
 ```
 
 
@@ -819,10 +756,7 @@ A lot of significant QTLs.
 
 ```{r, warning=FALSE}
 summary_QTL_PEPIL=summary_table_for_QTL(data, PEPIL, my_QTL_thres, 1.5)
-```
-
-```{r my_tablevfdvdfbd4, results='asis', echo=FALSE}
-print(xtable(summary_QTL_PEPIL), type = "html", include.rownames = F , comment=FALSE)
+kable(xtable(summary_QTL_PEPIL))
 ```
 
 QTL 1B is present for BAR14 only, once more with the Silur allele beeing resistant. The 5A QTL is once more available, with the Dic2 allele beeing resistant.
@@ -841,15 +775,14 @@ plot_a_interactiveQTL(data, "5A", my_var_to_show, my_QTL_thres, 7)
 
 
 
+
+
 ## Type 2: Nb of Spikelet with Fusa
 A lot of significant QTLs.
 
 ```{r, warning=FALSE}
 summary_QTL_NEPIL=summary_table_for_QTL(data, NEPIL, my_QTL_thres, 1.5)
-```
-
-```{r my_tablevfdv4, results='asis', echo=FALSE}
-print(xtable(summary_QTL_NEPIL), type = "html", include.rownames = F , comment=FALSE)
+kable(xtable(summary_QTL_NEPIL))
 ```
 
 The 1B QTL is present for BAR14 as usual, with Silur as resistant. Warning, GRI13 as a QTL on the 1B also, but not on the same position.  
@@ -925,7 +858,9 @@ OR=rbind(summary_QTL_DON, summary_QTL_NOT, summary_QTL_PEPI, summary_QTL_NEPIL, 
 In the publication we will talk about QTL on blups only, when available, and on raw data if not. Let's list of these QTLs:
 ```{r}
 OR=OR[which(OR$carac%in%PUBLI) , ]
-OR=OR[order(c(OR$chromo, OR$carac)) , ]
+dim(OR)
+OR=OR[order(OR$chromo, OR$carac), ]
+dim(OR)
 OR$position=round(OR$position,2)
 write.table(OR, file="~/Dropbox/Publi_Fusariose/SUPPORTING_DATA/OR_detail_all_QTLs.csv", row.names=F, col.names=T, quote=F, sep=";", dec=,)
 ```
@@ -937,15 +872,6 @@ save(list=ls() , file="/Users/yan/Dropbox/Publi_Fusariose/ANALYSIS_REPRO/DATA/QT
 
 
 [//]: =========================================================================================================================
-
-
-
-
-
-
-
-
-
 
 
 

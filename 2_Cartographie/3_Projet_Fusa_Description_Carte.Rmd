@@ -33,6 +33,8 @@ library(RColorBrewer)
 library(xtable)
 library(tidyverse)
 library(rmdformats)
+library(plotly)
+library(knitr)
 ```
 
 
@@ -41,7 +43,7 @@ library(rmdformats)
 
 
 
-#2/ Map description
+#2/ Map description  {.tabset .tabset-fade .tabset-pills}
 
 ## Summary table
 Basic statistics are computed for **every chromosomes** of the genetic map, then for the **A** and **B genomes**, and finally for the **whole genetic map**. Results are presented in the table below:
@@ -82,7 +84,9 @@ bilan=my_fun(map)
 ```
 
 ```{r my_table1, results='asis', fig.align="center"}
-print(xtable(bilan), type = "html", include.rownames = F , comment=FALSE)
+#print(xtable(bilan), type = "html", include.rownames = F , comment=FALSE)
+kable(xtable(bilan))
+
 ```
 
 This table is saved as a **supplementary material** for the publication.
@@ -104,153 +108,64 @@ ggplot(map, aes(y=position, x=group, color=ref)) +
 
 
 
-#3/ Marey map
+#3/ Genetic vs Physical positions  {.tabset .tabset-fade .tabset-pills}
 For most of the SNPs, a physical position is available trough the Ensembl database. It is interesting to compare the physical and the genetic positions of markers when both informations are available.
 
 
 
-##Graphic Representation
+##Marey Map
 This is the "marey map" representation. We will produce a figure for the paper with this code.
 
-```{r, fig.align='center', fig.height=9}
-head(map)
-levels(map$group)
-levels(map$group_phy)
+```{r, fig.align='center', fig.height=9, fig.width=7, warning=FALSE}
 p=map %>% 
   filter(group==group_phy) %>% 
-  ggplot(aes(x=position_phy, y=position, color=group, text=contig_map)) + 
-    geom_point() + 
-    facet_wrap(~chromo_map, scales="free") + 
+  ggplot(aes(x=position_phy, y=position, color=ref, text=marker)) + 
+    geom_point(size=0.5, alpha=0.5) + 
+    facet_wrap(~group, scales="free") + 
     theme(legend.position="none", axis.text=element_blank() , axis.ticks= element_blank() 
     )
-p
 ggplotly(p)
 ```
 
-
-
+Save this figure as a supplementary material
+```{r}
+png("../../../SUPPORTING_DATA/OR_marey_map.png")
+p
+dev.off()
+```
 
 
 
 ##Summary statistics
 
+Let's calculate the spearman correlation between physical and genetic positions for each chromosome?
 ```{r}
-# First we modify a little the files to be able to merge them. It gives the "data" object:
-POS$chromo_BW=as.factor(substr(POS$chromo_BW , 1 , 2))
-fun=function(x){strsplit(x,"@")[[1]][1] }
-map$contig=unlist(lapply(as.character(map[,2]) , fun))
-data=merge(map , POS , by.x=4 , by.y=2 , all=F)
-data=data[ , -1]
-
-# Compute the extremity of each chromosomes:
-extremity=merge(aggregate(POS$position_BW , by=list(POS$chromo_BW) , min) , aggregate(POS$position_BW , by=list(POS$chromo_BW) , max) , by.x=1 , by.y=1)
-
-# Function that computes statistics for a piece of map
-my_fun=function(my_map , i){
-  num=nrow(bilan2)
-  num=num+1
-  bilan2[num,1]=i
-  bilan2[num,2]=nrow(my_map)
-  bilan2[num,3]=max(my_map[,3])
-  gaps= sort(my_map[,3])[-1] - sort(my_map[,3])[-length(my_map[,3])]
-  bilan2[num,4]=mean(gaps)
-  bilan2[num,5]=max(gaps)
-  common_map=merge(map,my_map , by.x=4 , by.y=2 , all=F)
-  common_map=common_map[as.character(common_map$chromo_map) == as.character(common_map$chromo_BW) , ]
-  bilan2[num,6]=nrow(common_map)
-  bilan2[num,7]=round(cor(common_map$position_map , common_map$position_BW , method="spearman"),2)
-  return(bilan2)
-}
-
-# we will store the results in a "bilan2"" table:
-bilan2=data.frame(matrix(0,0,7))
-colnames(bilan2)=c("Chromo","nbr marker","size in cM","average gap","biggest gap", "nbr_common_marker" , "Spearman")
-
-# compute statistics for each chromosome separately:
-for(i in levels(map$chromo_map)){
-  map_K=POS[POS$chromo_BW==i,]
-  bilan2=my_fun(map_K,i)
-}
-# then for A and B genomes:
-for(i in c("A" , "B")){
-  map_K=POS[substr(POS$chromo_BW , 2 , 2)==i , ]
-  bilan2=my_fun(map_K,i)
-}
-# then for the whole map:
-i="tot"
-bilan2=my_fun(POS , i)
-
-#Add these informations to the summary of the genetic map:
-bilan=merge(bilan, bilan2[,c(1,6,7)] , by.x=1 , by.y=1)
-```
-
-```{r my_table2, results='asis'}
-print(xtable(bilan), type = "html", include.rownames = F , comment=FALSE)
-```
-
-It is the table number one of the publication, so we save it also:
-```{r}
-write.table(x=bilan,file="/Users/yan/Dropbox/Publi_Fusariose/TABLES/table1.csv", quote=F, col.names=NA , row.names=T, sep=";")
+tb=map %>%
+  filter(group==group_phy & !is.na(group)) %>% 
+	group_by(group) %>%
+	summarize( 
+	  cor_spearman=cor(position, position_phy, use="complete.obs", method="spearman") %>% round(2),
+	  nvalue=length(position)
+	  )
+kable(xtable(tb))
 ```
 
 
-##Graphic Representation
-This is the "marey map" representation. We will produce a figure for the paper with this code.
-	
-```{r, message=FALSE, warning=FALSE , fig.height=10, fig.width=8}
-# Plot preparation:
-#png(filename = "/Users/yan/Dropbox/Publi_Fusariose/FIGURE/Fig_2.png" )
-par(mfrow=c(4,4))
-par(mar=c(2.5 , 2.5 , 0.5 , 0.5))
+##Recombination events
+Do we have markers that have different chromosome attributions? Apparently we have some:  
+- between 7A and 4A
 
-# We will store features of chromosomes in a summary table:
-bilan_model=data.frame(matrix(0,14,6) ) ; colnames(bilan_model)=c("chromo" , "a" , "b x" , "c x2", "dx3" , "R2 adj")
-bilan_outsider=data[0, ]
-bilan_outsider2=data[0, ]
-num=0
-
-# For each chromosome:
-for(i in levels(data$chromo_map)){
-	
-	# Plot each markers with both physical & genetic positions:
-	don=data[data$chromo_map==i & data$chromo_BW==i & !is.na(data$chromo_BW) , ]
-	if(nrow(don)==0){next}
-	my_contigs=unlist(lapply(as.character(don$marker) , fun))
-	plot(don$position_map ~ don$position_BW ,  xlab="" , ylab=""  , pch=20 , 
-	     xlim=c(0,max(don$position_BW , na.rm=T)+20) , ylim=c(0,max(don$position_map , na.rm=T)+20) , 
-	     col=ifelse( regexpr("Traes", don$marker) != -1 | regexpr("TRAES",don$marker) != -1  , "blue" , "red" ) , cex.axis=0.7)
-	legend("topleft", paste(i," (",length(don$position_BW[!is.na(don$position_BW)]),")" , sep="") , 
-	     cex=1 , text.col="black" , bty="n" )
-	
-	# Add 2 ablines for start and end of the chromosome
-	abline(v=extremity[extremity[,1]==i ,c(2,3) ] , col="grey")
-	
-	# Let's add a polynomial regression:
-	num=num+1
-	bilan_model[num,1]=i
-	y=don$position_map
-	x=don$position_BW
-	model=lm(y ~ x + I(x^2) + I(x^3))
-	bilan_model[num , c(2:5)]=model$coefficients
-	bilan_model[num , 6]=summary(model)$adj.r.squared
-	myPredict <- predict( model , interval="predict" )
-	ix <- sort(x,index.return=T)$ix
-	lines(x[ix], myPredict[ix], col=2, lwd=2 )
-	polygon(c(rev(x[ix]), x[ix]), c(rev(myPredict[ ix,3]), myPredict[ ix,2]), col = rgb(0.7,0.7,0.7,0.4) , border = NA)
-	
-	# Let's notice which are the SNPs far from the polynomial regression (="outsider")
-	don$predict=myPredict[,1]
-	AA=don[don$predict > don$position_map+15 | don$predict < don$position_map-15 , ]
-	bilan_outsider=rbind(bilan_outsider , AA)
-	
-	# And notice which one are note in the confidence interval of the regression.
-	confidence=    predict( model , interval="predict" )
-	don$lwr=confidence[,2]
-	don$upr=confidence[,3]
-	BB=don[ don$position_map > confidence[,2] & don$position_map > confidence[,3] , ]
-	bilan_outsider2=rbind(bilan_outsider2 , BB)
-	
-	}
+```{r, fig.align='center', fig.height=9, fig.width=7, warning=FALSE}
+adjacency=table(map$group, map$group_phy)
+kable(xtable(adjacency))
+diag(adjacency)=0
+p=adjacency %>% 
+  as.data.frame() %>% 
+  rename(GeneticPosition=Var1, PhysicalPosition=Var2, NumberOfMarkers=Freq) %>% 
+  ggplot( aes(x=GeneticPosition, y=PhysicalPosition, z=NumberOfMarkers, fill=NumberOfMarkers)) +
+    geom_tile() + 
+    theme_bw()
+ggplotly(p)
 ```
 
 

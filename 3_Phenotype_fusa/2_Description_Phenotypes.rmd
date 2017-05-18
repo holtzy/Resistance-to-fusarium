@@ -487,3 +487,271 @@ for(i in c(2:50)){
 
 
 
+[//]: =========================================================================================================================
+
+#13/ Feature of experiments
+Let's summarize the feature of each experiment in a table:
+
+```{r}
+# start table
+bilan=data.frame( matrix(0,8,7) )
+colnames(bilan)=c("CAP13", "GRI11", "GRI13", "GRI15", "LEC14", "BEQ11","BAR14")
+rownames(bilan)=c("# obs", "# rep", "# geno", "DON?", "PEPI?", "NOT?", "NEPIL?", "PEPIL?")
+all=list(CAP13, GRI11, GRI13, GRI15, LEC14, BEQ11, BAR14)
+all_clean=list(CAP13_clean, GRI11_clean, GRI13_clean, GRI15_clean, LEC14_clean, BEQ11_clean, BAR14_clean)
+
+# Number of obs per exp?
+bilan[1,]=unlist(lapply(all, nrow ))
+# Number of ind rep:
+bilan[2,]=unlist(lapply(all, function(x){nrow(x[x$rep==2, ])} ))
+# Number of genotypes
+bilan[3,]=unlist(lapply(all_clean, nrow) )
+# Don available?
+bilan[4,]=c("Yes","-","Yes","-","Yes","-","-")
+# PEPI avail
+bilan[5,]=c("Yes","-","Yes","Yes","Yes","Yes","Yes")
+# NOT avail
+bilan[6,]=c("-","Yes","Yes","Yes","-","Yes","Yes")
+# NEPIL
+bilan[7,]=c("Yes","Yes","Yes","Yes","Yes","Yes","Yes")
+# PEPIL
+bilan[8,]=c("Yes","-","Yes","Yes","Yes","-","Yes")
+```
+
+```{r my_table111ee5, results='asis' , echo=FALSE}
+print(xtable(bilan), type = "html", include.rownames = T , comment=TRUE)
+```
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#14/ Effect of innoculation date?
+
+##Cappelle 2013
+Pour Cappelle, on observe un léger effet (plus de maladie lorsque l'Inoc à lieu tot). Mais cette effet n'est pas signif.
+```{r}
+# show
+par(mfrow=c(1,3), mar=c(5,4,2,2))
+boxplot( CAP13$CAP13_PEPIAUDPC ~ CAP13$CAP13_INO, ylab="PEPI (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( CAP13$CAP13_PEPILAUDPC ~ CAP13$CAP13_INO, ylab="PEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( CAP13$CAP13_NEPILAUDPC ~ CAP13$CAP13_INO, ylab="NEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+# Check if the innoculation date has an effect on the disease observation. I return the pvalues of the anova test for the innoculation effect. If < 0.05, we have a significant effect.
+for(i in c(9:ncol(CAP13))){
+  model=lm( CAP13[,i] ~ geno + CAP13_INO , data=CAP13)
+  a=anova(model)[2,5]
+  model2=lm( CAP13[,i] ~ geno + CAP13_INO2 , data=CAP13)
+  a=anova(model)[2,5]
+  b=anova(model2)[2,5]
+  print(paste(colnames(CAP13)[i], a, b,sep="  -  "))
+}
+
+```
+
+## Grisolles 2011
+Pas de données des dates d'Inoc
+
+## Grisolles 2013
+One more time, samples that are innoculated earlier show more symptoms. The difference is significant.
+```{r}
+# show
+par(mfrow=c(1,4), mar=c(5,4,2,2))
+boxplot( GRI13$GRI13_PEPIAUDPC ~ GRI13$GRI13_INO, ylab="PEPI (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( GRI13$GRI13_PEPILAUDPC ~ GRI13$GRI13_INO, ylab="PEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( GRI13$GRI13_NEPILAUDPC ~ GRI13$GRI13_INO, ylab="NEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( GRI13$GRI13_NOTAUDPC ~ GRI13$GRI13_INO, ylab="NOT (AUDPC)", xlab="Innoculation date", col=my_colors)
+# Check if the innoculation date has an effect on the disease observation. I return the pvalues of the anova test for the innoculation effect. If < 0.05, we have a significant effect.
+for(i in c(8:ncol(GRI13))){
+  model=lm( GRI13[,i] ~ geno + GRI13_INO , data=GRI13)
+  a=anova(model)[2,5]
+  print(paste(colnames(GRI13)[i],a, sep=" : "))
+}
+```
+
+## Grisolles 2015
+Hard to interpret. There is a significant difference between innoculation date. But it is not ordered. May be the date 1-->6 are not in the good order?
+
+```{r}
+# show
+par(mfrow=c(1,3), mar=c(5,4,2,2))
+boxplot( GRI15$GRI15_PEPILAUDPC ~ GRI15$GRI15_INO, ylab="PEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( GRI15$GRI15_NEPILAUDPC ~ GRI15$GRI15_INO, ylab="NEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( GRI15$GRI15_NOTAUDPC ~ GRI15$GRI15_INO, ylab="NOT (AUDPC)", xlab="Innoculation date", col=my_colors)
+# Significant?
+for(i in c(5:ncol(GRI15))){
+  model=lm( GRI15[,i] ~ geno + GRI15_INO , data=GRI15)
+  a=anova(model)[2,5]
+  print(paste(colnames(GRI15)[i],a, sep=" : "))
+}
+```
+
+## Lectoure 2014
+Visually, a strong effect as usual (later inoc=less disease). But not significant...
+
+```{r}
+# show
+par(mfrow=c(1,3), mar=c(5,4,2,2))
+boxplot( LEC14$LEC14_PEPILAUDPC ~ LEC14$LEC14_INO, ylab="PEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( LEC14$LEC14_NEPILAUDPC ~ LEC14$LEC14_INO, ylab="NEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( LEC14$LEC14_PEPIAUDPC ~ LEC14$LEC14_INO, ylab="PEPI (AUDPC)", xlab="Innoculation date", col=my_colors)
+# Significant?
+for(i in c(7:ncol(LEC14))){
+  model=lm( LEC14[,i] ~ geno + LEC14_INO , data=LEC14)
+  a=anova(model)[2,5]
+  print(paste(colnames(LEC14)[i],a, sep=" : "))
+}
+```
+
+## Montbequi 2011
+No innoculation date provided.
+
+## Montbartier 2014
+
+```{r}
+# show
+par(mfrow=c(1,3), mar=c(5,4,2,2))
+boxplot( BAR14$BAR14_PEPILAUDPC ~ BAR14$BAR14_INO, ylab="PEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( BAR14$BAR14_NEPILAUDPC ~ BAR14$BAR14_INO, ylab="NEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+boxplot( BAR14$BAR14_PEPILAUDPC ~ BAR14$BAR14_INO, ylab="PEPIL (AUDPC)", xlab="Innoculation date", col=my_colors)
+# Significant?
+for(i in c(11:ncol(BAR14))){
+  model=lm( BAR14[,i] ~ geno + as.factor(BAR14_INO) , data=BAR14)
+  a=anova(model)[2,5]
+  print(paste(colnames(BAR14)[i],a, sep=" : "))
+}
+```
+
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#15/ Effect of height in blup?
+
+On calcule les blups avec et sans effet de la hauteur:
+```{r}
+NOCOF=calculate_blup_nocofactor(11, CAP13)
+SANS=calculate_blup(11, 7, CAP13)
+AVEC=calculate_blup_height(11, 7, 5, CAP13)
+```
+
+Distribution de la variable et des blups :
+```{r}
+par(mfrow=c(1,3))
+hist(CAP13[,11] , col=rgb(0.1,0.8,0.1,0.4) , xlab="Original value of CAP13_PEPI550" , breaks=20, main="")
+hist(SANS[,2] , col=rgb(0.3,0.8,0.6,0.4) , xlab="Blup without height" , breaks=20, main="")
+hist(AVEC[,2] , col=rgb(0.1,0.4,0.6,0.4) , xlab="Blup with height" , breaks=20, main="")
+```
+
+On voit que la variable de base n'est pas du tout normale. Lorsque l'on passe au BLUP, la variable devient quasi-normale et répartie de -20 à 20 ou -40 à 40, ce qui est beaucoup plus classique.
+
+Plot de la relation entre note de base (rep1) et blup?
+```{r}
+AA=merge(CAP13[ which(CAP13$rep==1) ,c(1,11)]  , SANS, by.x=1, by.y=1, all.x=T  )
+AA=merge(AA, AVEC, by.x=1, by.y=1, all.x=T)
+par(mfrow=c(1,2))
+plot(AA[ ,2] , AA[,3] , pch=20 , col=rgb(0.3,0.2,0.6,0.4) , xlab="Original value of CAP13_PEPI550", ylab="Blup without height" , cex=1.3)
+plot(AA[ ,2] , AA[,4] , pch=20 , col=rgb(0.3,0.2,0.6,0.4) , xlab="Original value of CAP13_PEPI550", ylab="Blup without height" , cex=1.3)
+```
+
+
+Plot de la relation entre les 2:
+```{r}
+par(mfrow=c(1,1))
+plot(SANS[,2] , AVEC[,2] , pch=20 , col=rgb(0.3,0.2,0.6,0.4) , xlab="Blup without height", ylab="Blup without height" , cex=1.3)
+cor(SANS[,2] , AVEC[,2])
+```
+On a une très bonne corrélation entre les 2 blups, ce qui est plutôt rassurant. Reste à voir si les variations nous paraissent logiques.
+
+On rappelle que les plantes **hautes** sont censées être plus **résistante**.
+Essayons de trouver une plante très grande et une très petite, avec la même note de PEPI550.
+
+Le génotype 42.26 est très petit, avec des hauteurs de 65 et 75 pour rep1 et 2 resp. Concernant sont PEPI550, il est de 100 pour la rep1, NA pour la rep2.
+Le génotype 39.26 est beaucoup plus grand (1m25 et 1m). Il a aussi un PEPI550 de 100 pour la rep1 uniquement.
+
+Sans prendre en compte de cofacteur, ces 2 génotypes devraient avoir le même blup, puisqu'ils ont les meme scores de PEPI550. On peut le vérifier:
+
+```{r}
+NOCOF[NOCOF[,1]=="TT06DC.42.26" | NOCOF[,1]=="TT06DC.39.26" ,]
+```
+
+Ces 2 génotypes ont donc un score équivalent. Pourtant le 42.26 est petit, donc a plus de chance d'être touché par la Fusa. On pourrait donc dire qu'il est probablement plus résistant que le 39.26. On s'attend donc à ce qu'il ait un blup un peu plus bas! Vérifions le!
+
+```{r}
+AVEC[AVEC[,1]=="TT06DC.42.26" | AVEC[,1]=="TT06DC.39.26" ,]
+```
+
+On voit que c'est clairement le cas (5.42 vs -1.7). Donc le BLUP travaille correctement et devrait nous permettre d'améliorer nos QTLs!
+
+[//]: =========================================================================================================================
+
+
+
+
+
+
+
+[//]: =========================================================================================================================
+
+#15/ Effect of PEPIL in DON blups?
+
+on va prendre GRI13 comme exemple.
+
+Quelle est la relation entre le % d'épillets touchés et la valeur de don?  
+--> quasiment pas de corrélation. Du coup ça risque de ne pas trop changer les blups j'imagine.
+```{r}
+plot(CAP13_DON$CAP13_PEPIL550 , CAP13_DON$CAP13_DON, xlab="PEPIL 550" , ylab="DON" , pch=20 , col=rgb(0.6,0.1,0.0,0.4), cex=1.3)
+abline(lm(CAP13_DON$CAP13_DON ~ CAP13_DON$CAP13_PEPIL550) , col="grey")
+```
+
+
+Je calcule les blups avec et sans prise en compte du PEPIL
+
+```{r}
+# calculate blup without 
+aov<- lmer ( GRI13_DON ~ (1|geno)  , data=GRI13_DON)
+blup <- ranef(aov, condVar = TRUE)
+without=data.frame(geno=rownames(blup$geno), GRI13_DON_blup=blup$geno[,1])
+
+# calculate blup WITH
+aov<- lmer ( GRI13_DON ~ (1|geno) +  GRI13_PEPIL550 , data=GRI13_DON)
+blup <- ranef(aov, condVar = TRUE)
+with=data.frame(geno=rownames(blup$geno), GRI13_DON_blup=blup$geno[,1])
+
+# merge all
+AA=merge( CAP13_DON_clean , without , by.x=1 , by.y=1 , all.x=T)
+AA=merge( AA, with , by.x=1 , by.y=1 , all.x=T)
+```
+
+Relation entre les 2 blups? --> C'est très corrélé!
+```{r}
+# plot
+plot(AA[,4] , AA[,5], xlab="blup basic", ylab="blup taking PEPIL into account" , pch=20, col=rgb(0.9,0.3,0.1,0.3) )
+cor(AA[,4] , AA[,5], use="complete.obs")
+```
+
+
+[//]: =========================================================================================================================
+
+
+
+
+

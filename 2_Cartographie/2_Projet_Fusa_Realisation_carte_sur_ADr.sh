@@ -364,7 +364,7 @@ for i in LG_FORMATION/LGs_for_chromosome_* ; do
     LGs=$(cat $i | tr "\n" " ")
     echo "dsload SNP_BAIT_RNASEQ_SSR_FUSA.raw" > script_ordo_LG_$chromo
     echo "mrkmerges" >> script_ordo_LG_$chromo
-    echo "group 0.14 7" >> script_ordo_LG_$chromo
+    echo "group 0.2  6.5" >> script_ordo_LG_$chromo
     #Je groupe les LG 47 et 36, et ca devient automatiquement la sélection en cours
     echo "groupmerge "$LGs >> script_ordo_LG_$chromo    
     echo "sem" >> script_ordo_LG_$chromo
@@ -412,14 +412,15 @@ rm num_marqueurs_clean.txt marqueurs_redondants.txt
 
 
 #RETOURNEMENT DE CHROMOSMES?
-for i in 1B 2A 7B ; do
-Rscript /NAS/g2pop/HOLTZ_YAN_DATA/programmes/return_LG_in_map.R carte_final.txt $i ;
+for i in 1B 3A 3B 4A 5B 6A 7A ; do
+Rscript /gs7k1/projects/g2pop/HOLTZ_YAN_DATA/programmes/return_LG_in_map.R carte_final.txt $i ;
 done
 
 
 
 
 
+# ---------------------------------------------------------------------------------------------------------------------------------------------------------
 
 
 
@@ -443,6 +444,11 @@ map <- read.table("carte_final.txt",header=TRUE)
 fun=function(x){strsplit(x,"@")[[1]][1] }
 map$contig=unlist(lapply(as.character(map[,2]) , fun))
 map$contig=gsub("\\|TRAES.*","",map$contig)
+map$contig=gsub("\\..*","",map$contig)
+
+# Correction to the map: I remove 1 marker that is weird..
+map=subset(map, marker!="Cluster_10446|Contig2|likelySeq@329")
+map$position[ which(map$group=="2A")] = map$position[ which(map$group=="2A")] - 141.3
 
 # Positions physiques de ADr --> simple, il suffit de lire le fichier de la ref dicoccoides associé au fasta
 ADr=read.table("/gs7k1/projects/g2pop/HOLTZ_YAN_DATA/BREAD_WHEAT_IWGSC_and_HORDEUM/DATA_ASSAF_ISRAEL/hc_genes_info.tab", header=T, sep=",")
@@ -450,25 +456,28 @@ ADr$seqid=gsub("chr","",ADr$seqid)
 ADr=ADr[which(ADr$seqid!="Un"),] %>% droplevels
 ADr=ADr %>% mutate(pos=(end+start)/2)
 ADr=ADr[ , c(1,2,7)]
-colnames(ADr)=c( "chromo" ,  "contig" ,"position" )
+colnames(ADr)=c( "contig" ,  "chromo" ,"position" )
 ADr$type="ADr"
 
 # Positions physiques de BWr --> il faut blaster BWr sur ADr pour en déduire la position
-links=read.table("/gs7k1/projects/g2pop/HOLTZ_YAN_DATA/BREAD_WHEAT_IWGSC_and_HORDEUM/DATA_ASSAF_ISRAEL/Liaison_BWr_Hassaf")
-BWr=merge(links, ADr, by.x=1, by.y=1, all=T)
+links=read.table("/gs7k1/projects/g2pop/HOLTZ_YAN_DATA/BREAD_WHEAT_IWGSC_and_HORDEUM/DATA_ASSAF_ISRAEL/Liaison_BWr_Assaf")
+BWr=merge(links, ADr, by.x=2, by.y=1, all=T)
 BWr=BWr[ ,2:4]
-colnames(BWr)=c( "chromo" ,  "contig" ,"position" )
+colnames(BWr)=c( "contig" ,  "chromo" ,"position" )
 BWr$type="BWr"
 
 # Positions physiques de EPO --> il faut blaster EPO sur ADr pour en déduite la position!
 links=read.table("/gs7k1/projects/g2pop/HOLTZ_YAN_DATA/BREAD_WHEAT_IWGSC_and_HORDEUM/DATA_ASSAF_ISRAEL/Liaison_EPOr_Assaf")
-EPOr=merge(links, ADr, by.x=1, by.y=1, all=T)
+EPOr=merge(links, ADr, by.x=2, by.y=1, all=T)
 EPOr=EPOr[ ,2:4]
-colnames(EPOr)=c( "chromo" ,  "contig" ,"position" )
+colnames(EPOr)=c( "contig" ,  "chromo" ,"position" )
 EPOr$type="EPOr"
 
 # Regroupement
 POS=rbind(ADr, BWr, EPOr)
+
+# Check si les contig de la map sont dans les contigs des POS -> je dois pas en avoir trop
+map$contig[which(!map$contig %in% POS$contig)]
 
 # Merge physique / génétique
 data=merge(map, POS, by.x=4, by.y=1 , all.x=T)
@@ -482,9 +491,11 @@ write.table(x=data,file="map_avec_posi_physique.txt",col.names=TRUE,row.names=FA
 # Faut il retourner des chromosomes?
 data %>%
 	group_by(group) %>%
-	summarize( cor(position, position_phy, use="complete.obs"))
+	summarize( cor(position, position_phy, use="complete.obs", method="spearman"))
 
 #-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------#
+
+
 
 
 

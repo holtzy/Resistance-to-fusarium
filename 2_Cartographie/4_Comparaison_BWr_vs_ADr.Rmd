@@ -112,10 +112,10 @@ more /gs7k1/projects/g2pop/HOLTZ_YAN_DATA/BREAD_WHEAT_IWGSC_and_HORDEUM/TRANSCRI
 # Let's make the blast
 mkdir TMP
 cd TMP
-cat /gs7k1/projects/g2pop/HOLTZ_YAN_DATA/BREAD_WHEAT_IWGSC_and_HORDEUM/TRANSCRIT/RELEASE_28/transcriptome_BW_without_K_D.fasta | sed 's/|.*//' > bwr
-makeblastdb -in  bwr -dbtype nucl -out database
 cat ../TRIDC_WEWseq_PGSB_20160501_CDS_HighConf_REPR.fasta | sed 's/\..*//' > tmp
-qsub -q normal.q -b yes -cwd -N tmp_blast "/usr/local/bioinfo/blast+/default/bin/blastn -db database  -query tmp -outfmt '6 qseqid sseqid qstart qend qlen sstart send slen length pident evalue' > resultat_blastn"
+makeblastdb -in  tmp -dbtype nucl -out database
+cat /gs7k1/projects/g2pop/HOLTZ_YAN_DATA/BREAD_WHEAT_IWGSC_and_HORDEUM/TRANSCRIT/RELEASE_28/transcriptome_BW_without_K_D.fasta | sed 's/|.*//' > bwr
+qsub -q normal.q -b yes -cwd -N tmp_blast "/usr/local/bioinfo/blast+/default/bin/blastn -db database  -query bwr -outfmt '6 qseqid sseqid qstart qend qlen sstart send slen length pident evalue' > resultat_blastn"
 
 # and find the Best blast hit to make couples
 python /gs7k1/projects/g2pop/HOLTZ_YAN_DATA/programmes/find_best_blast.py -blast resultat_blastn -similarity 95 -overlap_abs 30 -overlap_rel 20 -out ../Liaison_BWr_Assaf
@@ -137,9 +137,9 @@ more /gs7k1/projects/g2pop/HOLTZ_YAN_DATA/EPO/0_DATA/RESSOURCES_EPO/EPO_106_Afte
 mkdir TMP
 cd TMP
 cat /gs7k1/projects/g2pop/HOLTZ_YAN_DATA/EPO/0_DATA/RESSOURCES_EPO/EPO_106_After_Homeo_Splitter.fasta > EPO
-makeblastdb -in  EPO -dbtype nucl -out database
 cat ../TRIDC_WEWseq_PGSB_20160501_CDS_HighConf_REPR.fasta | sed 's/\..*//' > tmp
-qsub -q normal.q -b yes -cwd -N tmp_blast "/usr/local/bioinfo/blast+/default/bin/blastn -db database  -query tmp -outfmt '6 qseqid sseqid qstart qend qlen sstart send slen length pident evalue' > resultat_blastn"
+makeblastdb -in  tmp -dbtype nucl -out database
+qsub -q normal.q -b yes -cwd -N tmp_blast "/usr/local/bioinfo/blast+/default/bin/blastn -db database  -query EPO -outfmt '6 qseqid sseqid qstart qend qlen sstart send slen length pident evalue' > resultat_blastn"
 
 # and find the Best blast hit to make couples
 cat resultat_blastn | sed 's/,/@@@@@@/g' > tmpresult
